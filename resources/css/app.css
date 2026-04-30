@@ -1,0 +1,45 @@
+@import "tailwindcss";
+@import "@tailwindcss/typography";
+@import "@tailwindcss/forms";
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif,
+        "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+        "Noto Color Emoji";
+}
+
+@layer base {
+    body {
+        @apply text-gray-900 antialiased;
+    }
+    h1,
+    h2,
+    h3,
+    h4 {
+        @apply font-bold leading-tight;
+    }
+}
+
+@layer components {
+    .btn {
+        @apply inline-block px-6 py-3 rounded-lg font-medium text-center transition;
+    }
+    .btn-primary {
+        @apply btn bg-blue-600 text-white hover:bg-blue-700;
+    }
+    .btn-secondary {
+        @apply btn bg-gray-200 text-gray-800 hover:bg-gray-300;
+    }
+    .card {
+        @apply bg-white rounded-lg shadow-md p-6;
+    }
+    .section {
+        @apply py-16 px-4 max-w-6xl mx-auto;
+    }
+    .container {
+        @apply max-w-6xl mx-auto px-4;
+    }
+}
