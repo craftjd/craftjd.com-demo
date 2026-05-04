@@ -5,19 +5,16 @@ description: Learn more about this site.
 
 # About
 
-Pages are flat files. A request to `/about` resolves to `resources/content/about.md`.
+This page is markdown — a good fit for text-heavy content that changes occasionally. For pages with custom layout, use a Blade file at `resources/views/pages/{slug}.blade.php` instead.
 
-## Front matter
+## When to use markdown
 
-Optional YAML front matter at the top of each file sets the page title and meta description:
+- Policy pages, FAQs, simple about copy
+- Content that non-devs might edit in the future
 
-```yaml
----
-title: Page Title
-description: Meta description for search engines.
----
-```
+## When to use Blade
 
-## Nested pages
+- Landing pages, service pages, anything with custom sections
+- One file at `resources/views/pages/your-slug.blade.php` — full HTML and Tailwind control
 
-Use subdirectories for nested URLs. For example, `resources/content/services/consulting.md` is served at `/services/consulting`.
+[Contact us](/contact)

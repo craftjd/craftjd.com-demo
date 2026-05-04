@@ -6,10 +6,6 @@ return [
     |--------------------------------------------------------------------------
     | Platform Features
     |--------------------------------------------------------------------------
-    |
-    | Toggle starter capabilities. Clients override individual flags in
-    | config/client.php under the same keys.
-    |
     */
 
     'features' => [
@@ -21,28 +17,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Flat-File Content
+    | Flat-File Pages
     |--------------------------------------------------------------------------
     |
-    | Markdown pages live in resources/content/{slug}.md
+    | Pages resolve in this order:
+    |   1. resources/views/pages/{slug}.blade.php  (hand-built, primary)
+    |   2. resources/content/{slug}.md             (markdown fallback)
+    |
+    | Disable flat_file_content to serve Blade pages only.
     |
     */
 
     'content' => [
         'path' => resource_path('content'),
         'home_slug' => 'home',
-        'layout' => 'starter.page',
-        'use_markdown_home' => true,
-        'home_view' => 'client.home',
+        'home_view' => 'home',
     ],
 
     /*
     |--------------------------------------------------------------------------
     | Reserved URL Segments
     |--------------------------------------------------------------------------
-    |
-    | Slugs that must never resolve to markdown files.
-    |
     */
 
     'reserved_slugs' => [

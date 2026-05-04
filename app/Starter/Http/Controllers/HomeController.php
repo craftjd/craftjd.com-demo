@@ -4,21 +4,18 @@ namespace App\Starter\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Starter\Contracts\ContentRenderer;
+use App\Starter\Services\PageResolver;
 
 class HomeController extends Controller
 {
-    public function index(ContentRenderer $renderer)
+    public function index(PageResolver $pages, ContentRenderer $renderer)
     {
-        if (! starter_config('content.use_markdown_home', true)) {
-            return view(starter_config('content.home_view', 'client.home'));
+        $view = $pages->resolve(starter_config('content.home_slug', 'home'), $renderer);
+
+        if ($view) {
+            return $view;
         }
 
-        $content = $renderer->render(starter_config('content.home_slug', 'home'));
-
-        if (! $content) {
-            return view(starter_config('content.home_view', 'client.home'));
-        }
-
-        return view(starter_config('content.layout', 'starter.page'), $content);
+        return view(starter_config('content.home_view', 'home'));
     }
 }

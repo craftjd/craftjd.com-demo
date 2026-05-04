@@ -4,22 +4,23 @@ namespace App\Starter\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Starter\Contracts\ContentRenderer;
+use App\Starter\Services\PageResolver;
 
 class BasePageController extends Controller
 {
-    public function show(string $slug, ContentRenderer $renderer)
+    public function show(string $slug, PageResolver $pages, ContentRenderer $renderer)
     {
         if ($this->isReservedSlug($slug)) {
             abort(404);
         }
 
-        $content = $renderer->render($slug);
+        $view = $pages->resolve($slug, $renderer);
 
-        if (! $content) {
+        if (! $view) {
             abort(404);
         }
 
-        return view(starter_config('content.layout', 'starter.page'), $content);
+        return $view;
     }
 
     protected function isReservedSlug(string $slug): bool
