@@ -6,8 +6,8 @@
                 <p class="text-lg text-gray-600 mb-8">{{ config('client.site_description') }}</p>
             @endif
             <p class="text-gray-500">
-                Override <code class="text-sm bg-gray-100 px-2 py-1 rounded">resources/views/client/home.blade.php</code>
-                or add <code class="text-sm bg-gray-100 px-2 py-1 rounded">resources/content/home.md</code>.
+                Add <code class="text-sm bg-gray-100 px-2 py-1 rounded">resources/content/home.md</code>
+                or customize <code class="text-sm bg-gray-100 px-2 py-1 rounded">resources/views/home.blade.php</code>.
             </p>
         </div>
     </section>

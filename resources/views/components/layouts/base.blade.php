@@ -4,7 +4,7 @@
 ])
 
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
 
 <head>
     <meta charset="utf-8">
@@ -26,12 +26,12 @@
     @endif
 </head>
 
-<body class="font-sans antialiased bg-white">
-    <x-starter-nav />
-    <main>
+<body class="flex min-h-full flex-col font-sans antialiased bg-white text-gray-900">
+    <x-nav />
+    <main class="flex-1">
         {{ $slot }}
     </main>
-    <x-starter-footer />
+    <x-footer />
     @livewireScripts
 </body>
 

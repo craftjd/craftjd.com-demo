@@ -26,7 +26,9 @@ return [
 
     'navigation' => [
         ['label' => 'Home', 'url' => '/'],
+        ['label' => 'Services', 'url' => '/services'],
         ['label' => 'About', 'url' => '/about'],
+        ['label' => 'Contact', 'url' => '/contact'],
     ],
 
     /*
@@ -88,12 +90,15 @@ return [
     |--------------------------------------------------------------------------
     | Content Overrides
     |--------------------------------------------------------------------------
+    |
+    | Blade pages live at resources/views/pages/{slug}.blade.php
+    | Markdown pages are an optional fallback at resources/content/{slug}.md
+    |
     */
 
     'content' => [
-        // 'use_markdown_home' => true,
-        // 'home_view' => 'client.home',
         // 'home_slug' => 'home',
+        // 'home_view' => 'home',
     ],
 
     /*
