@@ -1,4 +1,9 @@
-<x-layouts.base :title="$title" :metaDescription="$metaDescription">
+@extends('layouts.base')
+
+@section('title', $title)
+@section('meta_description', $metaDescription)
+
+@section('content')
     <x-page-header :title="$title" :description="$metaDescription" />
 
     <article class="section">
@@ -8,4 +13,4 @@
             </div>
         </div>
     </article>
-</x-layouts.base>
+@endsection

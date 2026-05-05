@@ -1,4 +1,9 @@
-<x-layouts.base title="{{ config('client.site_name') }}" :meta-description="config('client.site_description')">
+@extends('layouts.base')
+
+@section('title', config('client.site_name'))
+@section('meta_description', config('client.site_description'))
+
+@section('content')
     <x-page-header
         :title="config('client.site_name')"
         :description="config('client.site_description')"
@@ -16,4 +21,4 @@
             </div>
         </div>
     </section>
-</x-layouts.base>
+@endsection

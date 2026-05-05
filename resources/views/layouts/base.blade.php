@@ -1,17 +1,16 @@
-@props([
-    'title' => null,
-    'metaDescription' => null,
-])
-
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="{{ $metaDescription ?? config('client.site_description', '') }}">
+    @php
+        $pageTitle = trim($__env->yieldContent('title')) ?: ($title ?? config('client.site_name'));
+        $pageDescription = trim($__env->yieldContent('meta_description')) ?: ($metaDescription ?? config('client.site_description', ''));
+    @endphp
+    <meta name="description" content="{{ $pageDescription }}">
     <meta name="robots" content="{{ config('client.seo.robots', 'index, follow') }}">
-    <title>{{ $title ?? config('client.site_name') }}</title>
+    <title>{{ $pageTitle }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 
@@ -29,7 +28,11 @@
 <body class="flex min-h-full flex-col font-sans antialiased bg-white text-gray-900">
     <x-nav />
     <main class="flex-1">
-        {{ $slot }}
+        @hasSection('content')
+            @yield('content')
+        @else
+            {{ $slot }}
+        @endif
     </main>
     <x-footer />
     @livewireScripts

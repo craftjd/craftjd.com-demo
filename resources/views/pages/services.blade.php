@@ -1,7 +1,9 @@
-<x-layouts.base
-    title="Services"
-    meta-description="Strategy, design, and development for growing teams."
->
+@extends('layouts.base')
+
+@section('title', 'Services')
+@section('meta_description', 'Strategy, design, and development for growing teams.')
+
+@section('content')
     {{-- Dark hero band — inline utilities, no extracted component --}}
     <section class="relative overflow-hidden bg-gray-900 text-white">
         <div class="absolute inset-0 bg-gradient-to-br from-blue-600/30 via-transparent to-transparent"></div>
@@ -94,4 +96,4 @@
             </div>
         </div>
     </section>
-</x-layouts.base>
+@endsection
