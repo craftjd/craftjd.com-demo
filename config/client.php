@@ -27,6 +27,7 @@ return [
     'navigation' => [
         ['label' => 'Home', 'url' => '/'],
         ['label' => 'Services', 'url' => '/services'],
+        ['label' => 'Records', 'url' => '/records'],
         ['label' => 'About', 'url' => '/about'],
         ['label' => 'Contact', 'url' => '/contact'],
     ],

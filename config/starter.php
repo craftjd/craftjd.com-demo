@@ -36,6 +36,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Flat-File Data
+    |--------------------------------------------------------------------------
+    |
+    | Structured JSON for tables, listings, etc. Stored outside the public web
+    | root at storage/app/private/data/{name}.json
+    |
+    |   FlatFileStore::all('{name}')
+    |
+    */
+
+    'data' => [
+        'path' => storage_path('app/private/data'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Reserved URL Segments
     |--------------------------------------------------------------------------
     */
