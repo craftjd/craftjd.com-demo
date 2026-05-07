@@ -72,4 +72,16 @@
   .prose a {
     @apply text-blue-600 no-underline hover:text-blue-700 hover:underline;
   }
+
+  .form-label {
+    @apply mb-1 block text-sm font-medium text-gray-700;
+  }
+
+  .form-input {
+    @apply mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500;
+  }
+
+  .form-error {
+    @apply mt-1 text-sm text-red-600;
+  }
 }
