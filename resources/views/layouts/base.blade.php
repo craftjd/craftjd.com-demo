@@ -8,9 +8,9 @@
         $pageTitle = trim($__env->yieldContent('title')) ?: ($title ?? config('client.site_name'));
         $pageDescription = trim($__env->yieldContent('meta_description')) ?: ($metaDescription ?? config('client.site_description', ''));
     @endphp
-    <meta name="description" content="{{ $pageDescription }}">
     <meta name="robots" content="{{ config('client.seo.robots', 'index, follow') }}">
     <title>{{ $pageTitle }}</title>
+    <x-seo :title="$pageTitle" :description="$pageDescription" />
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 
