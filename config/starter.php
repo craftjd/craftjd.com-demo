@@ -31,7 +31,22 @@ return [
     'content' => [
         'path' => resource_path('content'),
         'home_slug' => 'home',
-        'home_view' => 'home',
+        'home_view' => 'pages.home',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sitemap
+    |--------------------------------------------------------------------------
+    |
+    | Slugs excluded from /sitemap.xml (demo pages, etc.)
+    |
+    */
+
+    'sitemap' => [
+        'excluded' => [
+            'records',
+        ],
     ],
 
     /*

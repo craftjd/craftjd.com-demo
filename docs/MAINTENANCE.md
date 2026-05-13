@@ -142,7 +142,8 @@ MAIL_PORT=465
 | Add a Blade page | `resources/views/pages/{slug}.blade.php` |
 | Add markdown page | `resources/content/{slug}.md` |
 | Nav links | `config/client.php` → `navigation` |
-| Site name / SEO basics | `config/client.php` + `.env` |
+| Site name / SEO basics | `config/client.php` + `.env` (`site_url`, `seo.og_image`, `seo.twitter_handle`) |
+| Sitemap | auto at `/sitemap.xml` — exclude slugs in `config/starter.php` → `sitemap.excluded` |
 | JSON table data | `storage/app/private/data/{name}.json` |
 | Contact form logic | `app/Livewire/ContactForm.php` |
 | Email template | `resources/views/mail/contact-form-submitted.blade.php` |
