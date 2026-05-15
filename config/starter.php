@@ -72,6 +72,7 @@ return [
     */
 
     'reserved_slugs' => [
+        'health',
         'livewire',
         'up',
         '_ignition',
@@ -88,5 +89,19 @@ return [
 
     'mail_driver' => 'log',
     'filesystem_disk' => 'public',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Monitoring
+    |--------------------------------------------------------------------------
+    |
+    | GET /health returns JSON when X-Monitor-Key matches MONITOR_KEY.
+    | Returns 404 when MONITOR_KEY is unset (endpoint hidden).
+    |
+    */
+
+    'monitor' => [
+        'key' => env('MONITOR_KEY'),
+    ],
 
 ];

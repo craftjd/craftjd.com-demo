@@ -1,6 +1,7 @@
 <?php
 
 use App\Starter\Http\Controllers\BasePageController;
+use App\Starter\Http\Controllers\HealthController;
 use App\Starter\Http\Controllers\HomeController;
 use App\Starter\Http\Controllers\SitemapController;
 use Illuminate\Support\Facades\Route;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Route;
 | Client-specific routes belong in routes/web.php at the project root.
 |
 */
+
+Route::get('/health', HealthController::class)->name('health');
 
 Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 
