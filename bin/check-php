@@ -6,14 +6,28 @@ cd "$ROOT"
 
 source "$ROOT/bin/lib.sh"
 
-PHP_VERSION="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
-PHP_MAJOR="$(php -r 'echo PHP_MAJOR_VERSION;')"
-PHP_MINOR="$(php -r 'echo PHP_MINOR_VERSION;')"
+php_bin() {
+    if command -v php8.3 >/dev/null 2>&1; then
+        echo php8.3
+    else
+        echo php
+    fi
+}
+
+PHP="$(php_bin)"
+
+PHP_VERSION="$("$PHP" -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+PHP_MAJOR="$("$PHP" -r 'echo PHP_MAJOR_VERSION;')"
+PHP_MINOR="$("$PHP" -r 'echo PHP_MINOR_VERSION;')"
 
 if (( PHP_MAJOR < 8 || (PHP_MAJOR == 8 && PHP_MINOR < 3) )); then
-    fail "PHP 8.3+ required (found ${PHP_VERSION})"
+    fail "PHP 8.3+ required (found ${PHP_VERSION} via ${PHP})"
 fi
-ok "PHP ${PHP_VERSION}"
+ok "PHP ${PHP_VERSION} (${PHP})"
+
+has_extension() {
+    "$PHP" -r "exit(extension_loaded('${1}') ? 0 : 1);"
+}
 
 REQUIRED=(mbstring xml curl zip openssl tokenizer pdo fileinfo)
 
@@ -27,10 +41,29 @@ if [[ "$(load_env_var CACHE_STORE)" == "redis" || "$(load_env_var SESSION_DRIVER
     REQUIRED+=(redis)
 fi
 
+MISSING=()
 for ext in "${REQUIRED[@]}"; do
-    php -m | grep -qi "^${ext}$" || fail "missing PHP extension: ${ext}"
-    ok "extension ${ext}"
+    if has_extension "$ext"; then
+        ok "extension ${ext}"
+    else
+        MISSING+=("$ext")
+    fi
 done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    echo "  php binary: $(command -v "$PHP") → $("$PHP" --ini | head -1)" >&2
+    if command -v php >/dev/null 2>&1 && command -v php8.3 >/dev/null 2>&1; then
+        echo "  php:       $(readlink -f "$(command -v php)")" >&2
+        echo "  php8.3:    $(readlink -f "$(command -v php8.3)")" >&2
+    fi
+    echo "  installed modules (${PHP}):" >&2
+    "$PHP" -m | sed 's/^/         /' >&2
+    echo "  fix (Ubuntu):" >&2
+    echo "    sudo phpenmod -v 8.3 mbstring xml curl zip sqlite3 mysql" >&2
+    echo "    sudo update-alternatives --set php /usr/bin/php8.3" >&2
+    echo "    sudo systemctl reload php8.3-fpm" >&2
+    fail "missing PHP extension(s): ${MISSING[*]}"
+fi
 
 if command -v systemctl >/dev/null 2>&1; then
     for unit in php8.3-fpm php8.4-fpm php-fpm; do
