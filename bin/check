@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+CHECKS=(check-web check-php check-db check-mail check-storage)
+FAILED=0
+
+echo "==> check"
+
+for check in "${CHECKS[@]}"; do
+    echo "--- ${check}"
+    if "$ROOT/bin/${check}"; then
+        :
+    else
+        FAILED=1
+    fi
+    echo
+done
+
+if (( FAILED )); then
+    echo "One or more checks failed." >&2
+    exit 1
+fi
+
+echo "All checks passed."

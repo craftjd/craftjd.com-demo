@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+source "$ROOT/bin/lib.sh"
+
+[[ -w storage ]] || fail "storage is not writable"
+ok "storage writable"
+
+[[ -w bootstrap/cache ]] || fail "bootstrap/cache is not writable"
+ok "bootstrap/cache writable"
+
+DATA_DIR="storage/app/private/data"
+if [[ -d "$DATA_DIR" ]]; then
+    [[ -w "$DATA_DIR" ]] || fail "${DATA_DIR} is not writable"
+    ok "${DATA_DIR} writable"
+fi

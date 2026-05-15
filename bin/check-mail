@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+source "$ROOT/bin/lib.sh"
+
+CONTACT_EMAIL="$(load_env_var CONTACT_EMAIL)"
+MAIL_MAILER="$(load_env_var MAIL_MAILER)"
+
+[[ -n "$CONTACT_EMAIL" ]] || fail "CONTACT_EMAIL is not set"
+ok "CONTACT_EMAIL"
+
+if [[ "$MAIL_MAILER" == "smtp" ]]; then
+    [[ -n "$(load_env_var MAIL_HOST)" ]] || fail "MAIL_HOST is not set (smtp)"
+    ok "MAIL_HOST"
+fi
+
+ok "MAIL_MAILER=${MAIL_MAILER}"

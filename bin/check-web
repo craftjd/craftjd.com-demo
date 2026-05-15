@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+source "$ROOT/bin/lib.sh"
+
+BASE_URL="${CHECK_URL:-http://127.0.0.1}"
+
+curl -fsS "${BASE_URL}/up" >/dev/null || fail "GET /up"
+ok "/up"
+
+curl -fsS "${BASE_URL}/" >/dev/null || fail "GET /"
+ok "/"
+
+curl -fsS "${BASE_URL}/sitemap.xml" >/dev/null || fail "GET /sitemap.xml"
+ok "/sitemap.xml"
+
+MONITOR_KEY="$(load_env_var MONITOR_KEY)"
+if [[ -n "$MONITOR_KEY" ]]; then
+    curl -fsS -H "X-Monitor-Key: ${MONITOR_KEY}" "${BASE_URL}/health" >/dev/null || fail "GET /health"
+    ok "/health"
+fi

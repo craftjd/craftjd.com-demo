@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+source "$ROOT/bin/lib.sh"
+
+echo "==> deploy"
+
+require_command git
+require_command php
+require_command composer
+require_command npm
+
+BRANCH="${DEPLOY_BRANCH:-main}"
+
+ok "pulling ${BRANCH}"
+git pull origin "$BRANCH"
+
+ok "composer install"
+composer install --no-dev --optimize-autoloader --no-interaction
+
+ok "npm build"
+npm ci
+npm run build
+
+ok "artisan migrate"
+php artisan migrate --force
+
+ok "artisan cache"
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+mkdir -p storage/app
+
+GIT_SHA="$(git rev-parse HEAD)"
+DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+cat > storage/app/deploy-meta.json <<EOF
+{"git_sha":"${GIT_SHA}","deployed_at":"${DEPLOYED_AT}"}
+EOF
+
+ok "deploy meta written (${GIT_SHA:0:7})"
+echo "Deploy complete. Run: ./bin/check"

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+source "$ROOT/bin/lib.sh"
+
+PHP_VERSION="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+PHP_MAJOR="$(php -r 'echo PHP_MAJOR_VERSION;')"
+PHP_MINOR="$(php -r 'echo PHP_MINOR_VERSION;')"
+
+if (( PHP_MAJOR < 8 || (PHP_MAJOR == 8 && PHP_MINOR < 3) )); then
+    fail "PHP 8.3+ required (found ${PHP_VERSION})"
+fi
+ok "PHP ${PHP_VERSION}"
+
+REQUIRED=(mbstring xml curl zip openssl tokenizer pdo fileinfo)
+
+DB_CONNECTION="$(load_env_var DB_CONNECTION)"
+case "$DB_CONNECTION" in
+    sqlite) REQUIRED+=(pdo_sqlite) ;;
+    mysql) REQUIRED+=(pdo_mysql) ;;
+esac
+
+if [[ "$(load_env_var CACHE_STORE)" == "redis" || "$(load_env_var SESSION_DRIVER)" == "redis" || "$(load_env_var QUEUE_CONNECTION)" == "redis" ]]; then
+    REQUIRED+=(redis)
+fi
+
+for ext in "${REQUIRED[@]}"; do
+    php -m | grep -qi "^${ext}$" || fail "missing PHP extension: ${ext}"
+    ok "extension ${ext}"
+done
+
+if command -v systemctl >/dev/null 2>&1; then
+    for unit in php8.3-fpm php8.4-fpm php-fpm; do
+        if systemctl is-active --quiet "${unit}" 2>/dev/null; then
+            ok "php-fpm (${unit})"
+            exit 0
+        fi
+    done
+    echo "  warn  php-fpm service not detected (skip if not using systemd)"
+fi
