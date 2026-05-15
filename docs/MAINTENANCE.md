@@ -132,6 +132,66 @@ MAIL_PORT=465
 - [ ] `MAIL_FROM_ADDRESS` is on the client's domain (not `@gmail.com`)
 - [ ] `APP_URL` matches the live URL
 - [ ] `MAIL_MAILER` is **not** `log`
+- [ ] `MONITOR_KEY` is set (random string; used by hub to poll `/health`)
+
+---
+
+## Deploy (production)
+
+SSH to the server, then from the app root:
+
+```bash
+./bin/deploy
+./bin/check
+```
+
+### `bin/deploy`
+
+1. `git pull` (branch `main`, override with `DEPLOY_BRANCH=...`)
+2. `composer install --no-dev`
+3. `npm ci && npm run build`
+4. `php artisan migrate --force`
+5. `php artisan config:cache`, `route:cache`, `view:cache`
+6. Writes `storage/app/deploy-meta.json` (`git_sha`, `deployed_at`)
+
+After deploy, reload PHP-FPM if your stack requires it (not automated — varies by host):
+
+```bash
+sudo systemctl reload php8.3-fpm
+```
+
+### `bin/check`
+
+Runs all domain checks in one pass:
+
+| Script | What it verifies |
+|--------|------------------|
+| `bin/check-web` | `GET /up`, `/`, `/sitemap.xml`, `/health` (if `MONITOR_KEY` set) |
+| `bin/check-php` | PHP 8.3+, required extensions, php-fpm (if systemd) |
+| `bin/check-db` | `php artisan db:show` |
+| `bin/check-mail` | `CONTACT_EMAIL`, SMTP host when `MAIL_MAILER=smtp` |
+| `bin/check-storage` | Writable `storage/`, `bootstrap/cache`, data dir |
+
+Override web check base URL: `CHECK_URL=https://example.com ./bin/check-web`
+
+### `/health` (hub monitoring)
+
+When `MONITOR_KEY` is set in `.env`, `GET /health` returns JSON. Send the key in header `X-Monitor-Key`.
+
+Without `MONITOR_KEY`, the endpoint returns 404 (hidden).
+
+Example response:
+
+```json
+{
+  "status": "ok",
+  "client": "Acme Co",
+  "env": "production",
+  "deployed_at": "2026-06-12T14:30:00Z",
+  "git_sha": "abc123...",
+  "checks": { "db": true, "storage": true, "mail": true }
+}
+```
 
 ---
 
