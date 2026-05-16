@@ -22,7 +22,12 @@ ok "composer install"
 composer install --no-dev --optimize-autoloader --no-interaction
 
 ok "npm build"
-npm ci
+if [[ -f package-lock.json ]]; then
+    npm ci
+else
+    warn "no package-lock.json — run npm install (commit the lockfile for reproducible deploys)"
+    npm install
+fi
 npm run build
 
 ok "artisan migrate"
