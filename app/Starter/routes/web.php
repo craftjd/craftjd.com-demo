@@ -18,6 +18,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('health');
 
+Route::get('/up', function () {
+    return response()->noContent();
+})->name('up');
+
 Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 
 Route::get('/robots.txt', function () {
