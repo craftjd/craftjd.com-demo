@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
+
+TIER=""
+DOMAIN=""
+REPO=""
+SSL=false
+CERT_EMAIL=""
+DB_NAME=""
+DB_USER=""
+DB_PASS=""
+RUN_DEPLOY=false
+WEB_ROOT="/var/www"
+
+usage() {
+    cat <<'EOF'
+Usage: provision-site --domain=DOMAIN --repo=GIT_URL --tier=flat-file|app [options]
+
+Per-client site setup. Run as deploy (sudo required for nginx/Certbot).
+
+Options:
+  --ssl                 Request Let's Encrypt certificate (DNS must point here)
+  --cert-email=EMAIL    Required with --ssl (Let's Encrypt account email)
+  --db-name=NAME        App tier: MySQL database name
+  --db-user=USER        App tier: MySQL user
+  --db-pass=PASS        App tier: MySQL password
+  --deploy              Run ./bin/deploy after setup (edit .env mail settings first)
+
+Example:
+  ./bin/provision-site \
+    --domain=client.com \
+    --repo=git@github.com:you/client.com.git \
+    --tier=flat-file
+
+  ./bin/provision-site \
+    --domain=client.com \
+    --repo=git@github.com:you/client.com.git \
+    --tier=app \
+    --db-name=client_db --db-user=client_user --db-pass='secret' \
+    --ssl --cert-email=you@example.com
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --tier=*) TIER="${1#*=}" ;;
+        --tier) TIER="${2:?}"; shift ;;
+        --domain=*) DOMAIN="${1#*=}" ;;
+        --domain) DOMAIN="${2:?}"; shift ;;
+        --repo=*) REPO="${1#*=}" ;;
+        --repo) REPO="${2:?}"; shift ;;
+        --cert-email=*) CERT_EMAIL="${1#*=}" ;;
+        --cert-email) CERT_EMAIL="${2:?}"; shift ;;
+        --db-name=*) DB_NAME="${1#*=}" ;;
+        --db-name) DB_NAME="${2:?}"; shift ;;
+        --db-user=*) DB_USER="${1#*=}" ;;
+        --db-user) DB_USER="${2:?}"; shift ;;
+        --db-pass=*) DB_PASS="${1#*=}" ;;
+        --db-pass) DB_PASS="${2:?}"; shift ;;
+        --ssl) SSL=true ;;
+        --deploy) RUN_DEPLOY=true ;;
+        -h | --help) usage; exit 0 ;;
+        *) fail "unknown argument: $1 (try --help)" ;;
+    esac
+    shift
+done
+
+[[ -n "$TIER" && -n "$DOMAIN" && -n "$REPO" ]] || { usage; exit 1; }
+validate_tier "$TIER"
+
+if [[ "$DOMAIN" =~ [^a-zA-Z0-9._-] ]]; then
+    fail "invalid domain: ${DOMAIN}"
+fi
+
+if [[ "$SSL" == true && -z "$CERT_EMAIL" ]]; then
+    fail "--cert-email is required with --ssl"
+fi
+
+if [[ "$TIER" == "app" ]]; then
+    if [[ -n "$DB_NAME" || -n "$DB_USER" || -n "$DB_PASS" ]]; then
+        [[ -n "$DB_NAME" && -n "$DB_USER" && -n "$DB_PASS" ]] || fail "app tier requires all of --db-name, --db-user, --db-pass"
+    fi
+fi
+
+require_sudo
+
+SITE_DIR="${WEB_ROOT}/${DOMAIN}"
+
+echo "==> provision-site (tier=${TIER}, domain=${DOMAIN})"
+
+if [[ -d "$SITE_DIR" ]]; then
+    fail "${SITE_DIR} already exists"
+fi
+
+if [[ ! -d "$WEB_ROOT" ]]; then
+    fail "${WEB_ROOT} missing — run bin/provision-server first"
+fi
+
+ok "cloning ${REPO}"
+git clone "$REPO" "$SITE_DIR"
+cd "$SITE_DIR"
+
+ENV_TEMPLATE=".env.flat-file.example"
+if [[ "$TIER" == "app" ]]; then
+    ENV_TEMPLATE=".env.app.example"
+fi
+
+[[ -f "$ENV_TEMPLATE" ]] || fail "missing ${ENV_TEMPLATE} in repo"
+cp "$ENV_TEMPLATE" .env
+
+APP_URL="https://${DOMAIN}"
+if [[ "$SSL" != true ]]; then
+    APP_URL="http://${DOMAIN}"
+fi
+
+MONITOR_KEY="$(php -r 'echo bin2hex(random_bytes(16));')"
+
+set_env_var APP_URL "$APP_URL" .env
+set_env_var MONITOR_KEY "$MONITOR_KEY" .env
+
+ok "composer install"
+composer install --no-dev --optimize-autoloader --no-interaction
+
+if [[ "$TIER" == "app" && -n "$DB_NAME" ]]; then
+    ok "creating MySQL database ${DB_NAME}"
+    sudo_cmd mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    sudo_cmd mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+    sudo_cmd mysql -e "GRANT ALL ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
+    sudo_cmd mysql -e "FLUSH PRIVILEGES;"
+    set_env_var DB_DATABASE "$DB_NAME" .env
+    set_env_var DB_USERNAME "$DB_USER" .env
+    set_env_var DB_PASSWORD "$DB_PASS" .env
+fi
+
+if [[ "$TIER" == "flat-file" ]]; then
+    ok "creating SQLite database"
+    touch database/database.sqlite
+fi
+
+ok "generating APP_KEY"
+php artisan key:generate --force
+
+ok "setting permissions"
+sudo_cmd chown -R "$(whoami):www-data" storage bootstrap/cache database
+sudo_cmd chmod -R g+w storage bootstrap/cache database
+
+NGINX_SITE="/etc/nginx/sites-available/${DOMAIN}"
+
+ok "writing nginx config"
+sudo_cmd tee "$NGINX_SITE" >/dev/null <<EOF
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+    root ${SITE_DIR}/public;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    index index.php;
+    charset utf-8;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php\$ {
+        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_hide_header X-Powered-By;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+EOF
+
+sudo_cmd ln -sf "$NGINX_SITE" "/etc/nginx/sites-enabled/${DOMAIN}"
+sudo_cmd nginx -t
+sudo_cmd systemctl reload nginx
+
+if [[ "$SSL" == true ]]; then
+    ok "requesting TLS certificate"
+    sudo_cmd certbot --nginx \
+        -d "$DOMAIN" -d "www.${DOMAIN}" \
+        --non-interactive --agree-tos -m "$CERT_EMAIL" \
+        --redirect
+    set_env_var APP_URL "https://${DOMAIN}" .env
+fi
+
+echo
+echo "Site scaffolded at ${SITE_DIR}"
+echo "MONITOR_KEY=${MONITOR_KEY}"
+echo
+echo "Edit .env before going live:"
+echo "  APP_NAME, CONTACT_EMAIL, MAIL_* (and GA_MEASUREMENT_ID if used)"
+if [[ "$TIER" == "app" && -z "$DB_NAME" ]]; then
+    echo "  DB_DATABASE, DB_USERNAME, DB_PASSWORD (create MySQL database first)"
+fi
+echo
+echo "Then:"
+echo "  cd ${SITE_DIR}"
+echo "  ./bin/deploy"
+echo "  sudo systemctl reload php8.3-fpm"
+echo "  ./bin/check"
+
+if [[ "$RUN_DEPLOY" == true ]]; then
+    warn "running deploy (ensure .env mail settings are set)"
+    ./bin/deploy
+    sudo_cmd systemctl reload php8.3-fpm
+fi
