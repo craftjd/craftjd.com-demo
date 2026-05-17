@@ -16,4 +16,4 @@ With Sail: `./vendor/bin/sail up -d`
 
 ## Maintainer docs
 
-**[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** — architecture, mail, env, common tasks. Read this when revisiting a project.
+**[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** — architecture, server provisioning, mail, deploy, common tasks. Read this when revisiting a project.
