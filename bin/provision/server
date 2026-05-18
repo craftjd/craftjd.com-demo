@@ -2,22 +2,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib.sh"
+if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+    BIN_ROOT="${SCRIPT_DIR}"
+fi
+source "${BIN_ROOT}/lib.sh"
 
 TIER=""
 
 usage() {
     cat <<'EOF'
-Usage: provision-server --tier=flat-file|app
+Usage: server --tier=flat-file|app
 
 One-time VPS setup (Ubuntu 24.04). Run as root on a fresh Linode, or with sudo.
 
   flat-file  nginx, PHP 8.3 + SQLite, Composer, Node, UFW
   app        above + MySQL, Redis
 
-Example (copy scripts to the server first):
-  scp bin/provision-server bin/lib.sh root@SERVER_IP:~/
-  ssh root@SERVER_IP 'bash provision-server --tier=flat-file'
+From laptop: ./bin/remote server CLIENT_NAME
 EOF
 }
 
@@ -38,7 +41,7 @@ if [[ "${EUID}" -ne 0 ]] && ! sudo -n true 2>/dev/null; then
     fail "run as root or as a user with passwordless sudo"
 fi
 
-echo "==> provision-server (tier=${TIER})"
+echo "==> provision server (tier=${TIER})"
 
 if [[ "${EUID}" -eq 0 ]] && ! id deploy &>/dev/null; then
     ok "creating deploy user"
@@ -149,18 +152,12 @@ fi
 echo
 echo "Server ready. Next:"
 if [[ ! -s /home/deploy/.ssh/authorized_keys ]] 2>/dev/null; then
-    echo "  !  deploy SSH keys missing — fix keys (see warnings above), then:"
-    echo "     ssh-copy-id -i ~/.ssh/id_ed25519.pub root@SERVER_IP"
-    echo "     ssh root@SERVER_IP 'bash ~/provision-server --tier=${TIER}'"
+    echo "  !  deploy SSH keys missing — fix keys (see warnings above), then re-run."
     echo
 fi
-echo "  1. ssh deploy@SERVER_IP"
-echo "  2. Copy bin/provision-site (or clone a site repo that includes bin/)"
-echo "  3. ./bin/provision-site --domain=example.com --repo=git@... --tier=${TIER}"
+echo "  ./bin/remote site CLIENT_NAME"
 
 if [[ "$TIER" == "app" ]]; then
     echo
-    echo "App tier: create a MySQL database when provisioning the site:"
-    echo "  --db-name=... --db-user=... --db-pass=..."
-    echo "  Or run mysql manually after provision-site."
+    echo "App tier: pass --db-name/user/pass when provisioning the site."
 fi

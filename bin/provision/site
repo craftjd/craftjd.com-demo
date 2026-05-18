@@ -2,7 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib.sh"
+if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+    BIN_ROOT="${SCRIPT_DIR}"
+fi
+source "${BIN_ROOT}/lib.sh"
 
 TIER=""
 DOMAIN=""
@@ -17,7 +22,7 @@ WEB_ROOT="/var/www"
 
 usage() {
     cat <<'EOF'
-Usage: provision-site --domain=DOMAIN --repo=GIT_URL --tier=flat-file|app [options]
+Usage: site --domain=DOMAIN --repo=GIT_URL --tier=flat-file|app [options]
 
 Per-client site setup. Run as deploy (sudo required for nginx/Certbot).
 
@@ -29,18 +34,8 @@ Options:
   --db-pass=PASS        App tier: MySQL password
   --deploy              Run ./bin/deploy after setup (edit .env mail settings first)
 
-Example:
-  ./bin/provision-site \
-    --domain=client.com \
-    --repo=git@github.com:you/client.com.git \
-    --tier=flat-file
-
-  ./bin/provision-site \
-    --domain=client.com \
-    --repo=git@github.com:you/client.com.git \
-    --tier=app \
-    --db-name=client_db --db-user=client_user --db-pass='secret' \
-    --ssl --cert-email=you@example.com
+From laptop:
+  ./bin/remote site CLIENT_NAME
 EOF
 }
 
@@ -89,18 +84,23 @@ require_sudo
 
 SITE_DIR="${WEB_ROOT}/${DOMAIN}"
 
-echo "==> provision-site (tier=${TIER}, domain=${DOMAIN})"
+echo "==> provision site (tier=${TIER}, domain=${DOMAIN})"
 
 if [[ -d "$SITE_DIR" ]]; then
     fail "${SITE_DIR} already exists"
 fi
 
 if [[ ! -d "$WEB_ROOT" ]]; then
-    fail "${WEB_ROOT} missing — run bin/provision-server first"
+    fail "${WEB_ROOT} missing — run provision server first"
 fi
 
-ok "cloning ${REPO}"
-git clone "$REPO" "$SITE_DIR"
+CLONE_URL="$(github_repo_clone_url "$REPO")"
+require_github_repo_access "$REPO"
+
+ok "cloning ${CLONE_URL}"
+if ! git clone "$CLONE_URL" "$SITE_DIR"; then
+    fail "git clone failed — see MAINTENANCE.md → Private GitHub repos"
+fi
 cd "$SITE_DIR"
 
 ENV_TEMPLATE=".env.flat-file.example"
@@ -189,7 +189,7 @@ sudo_cmd nginx -t
 sudo_cmd systemctl reload nginx
 
 if [[ "$SSL" == true ]]; then
-    ok "requesting TLS certificate"
+    ok "requesting TLS certificate (${DOMAIN} + www.${DOMAIN})"
     sudo_cmd certbot --nginx \
         -d "$DOMAIN" -d "www.${DOMAIN}" \
         --non-interactive --agree-tos -m "$CERT_EMAIL" \
