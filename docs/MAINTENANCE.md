@@ -151,16 +151,29 @@ Multiple brochure sites can share one VPS (separate vhosts + app dirs). Run **`p
 
 1. Linode → **Create Linode** → Ubuntu 24.04 LTS, region near the client
 2. Add your **SSH public key** at create time (or `ssh-copy-id` to root before provisioning). The `deploy` user has **no password** — it receives a copy of root's authorized keys. If root uses password-only login, `deploy` cannot SSH until you add a key to root and re-run `provision-server`.
-3. Note the public IP — you'll need it for DNS and first SSH
+3. Note the public IP — set it as `IP` in your client config (step 2)
 
-### 2. Provision the server (`bin/provision-server`)
+### 2. Client config and server provisioning
 
-Copy the scripts from this repo to the fresh server and run as **root**:
+Create a config per client site (gitignored; copy the example):
 
 ```bash
-scp bin/provision-server bin/lib.sh root@SERVER_IP:~/
-ssh root@SERVER_IP 'bash provision-server --tier=flat-file'
-# or: bash provision-server --tier=app
+cp bin/provision/clients/_example.conf bin/provision/clients/starter.craftjd.conf
+# edit IP, TIER, DOMAIN, REPO, SSL, CERT_EMAIL
+```
+
+Client configs live in `bin/provision/clients/*.conf` (gitignored except `_example.conf`). All `bin/remote` commands read from this file — you do not pass IP or tier on the command line.
+
+Provision the VPS (once per server; uses `IP` and `TIER` from the config):
+
+```bash
+./bin/remote server starter.craftjd
+```
+
+Manual equivalent (run on the server as root):
+
+```bash
+./bin/provision/server --tier=flat-file
 ```
 
 **`flat-file`** installs: nginx, PHP 8.3 (+ SQLite), Composer, Node 20, Certbot, UFW, `deploy` user, `/var/www`.
@@ -169,33 +182,41 @@ ssh root@SERVER_IP 'bash provision-server --tier=flat-file'
 
 The script is idempotent — safe to re-run if something fails mid-way.
 
-### 3. Provision a client site (`bin/provision-site`)
+### 2b. GitHub deploy key (private repos only)
 
-SSH as `deploy`, copy `bin/provision-site` + `bin/lib.sh` (or use them from an already-cloned repo):
+Skip this if your repo is public. For **private** GitHub repos, run **once per server** before site provisioning:
 
 ```bash
-scp bin/provision-site bin/lib.sh deploy@SERVER_IP:~/
-ssh deploy@SERVER_IP
+./bin/remote github-key starter.craftjd
 ```
 
-**Brochure example:**
+Copy the printed public key into each repo: **Settings → Deploy keys → Add deploy key** (read-only). Full details: **Private GitHub repos** below.
+
+### 3. Provision a client site
 
 ```bash
-bash provision-site \
+./bin/remote site starter.craftjd
+```
+
+Use an **SSH repo URL** for private GitHub repos: `git@github.com:ORG/repo.git` (not HTTPS). Set up the deploy key in step 2b first.
+
+`SSL=true` runs Certbot for **both** `DOMAIN` and `www.DOMAIN` (`@` and `www` A records required first).
+
+CLI flags override the client config when needed:
+
+```bash
+./bin/remote site starter.craftjd --ssl --cert-email=you@example.com
+```
+
+**App tier** — set `DB_NAME`, `DB_USER`, `DB_PASS` in the client config, or pass `--db-name/user/pass` on the CLI.
+
+Manual equivalent (on the server as `deploy`):
+
+```bash
+./bin/provision/site \
   --domain=client.com \
   --repo=git@github.com:YOU/client.com.git \
   --tier=flat-file
-```
-
-**App example** (creates MySQL database/user and requests TLS):
-
-```bash
-bash provision-site \
-  --domain=client.com \
-  --repo=git@github.com:YOU/client.com.git \
-  --tier=app \
-  --db-name=client_db --db-user=client_user --db-pass='strong-password' \
-  --ssl --cert-email=you@example.com
 ```
 
 The script will:
@@ -206,12 +227,114 @@ The script will:
 4. Create SQLite file (brochure) or MySQL DB (app, when flags provided)
 5. Fix `storage/` / `bootstrap/cache` permissions
 6. Write and enable an nginx vhost
-7. Optionally run Certbot (`--ssl` — DNS A records must already point at the server)
+7. Optionally run Certbot (`SSL=true` or `--ssl` — covers `@` and `www`; DNS must point at the server first)
 
 It prints the generated `MONITOR_KEY`. **Edit `.env`** before going live:
 
 - `APP_NAME`, `CONTACT_EMAIL`, `MAIL_*` (and `GA_MEASUREMENT_ID` if used)
 - App tier without `--db-*` flags: set `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` manually
+
+### Private GitHub repos
+
+`provision/site` runs `git clone` on the server as the **deploy** user. Private repos need a **read-only deploy key** before you run `./bin/remote site`.
+
+#### 1. One-time per server (deploy user)
+
+From your laptop (uses `IP` from the client config):
+
+```bash
+./bin/remote github-key starter.craftjd
+```
+
+Manual equivalent:
+
+```bash
+scp bin/provision/github-key bin/lib.sh deploy@SERVER_IP:~/
+ssh deploy@SERVER_IP 'bash ~/github-key'
+```
+
+The script will:
+
+- Create `~/.ssh/github_deploy` (ed25519)
+- Add a `github.com` entry to `~/.ssh/config`
+- Print the **public key** to add in GitHub
+
+#### 2. Add the deploy key to each private repo
+
+For every client repo you deploy from:
+
+1. GitHub → **repo** → **Settings** → **Deploy keys** → **Add deploy key**
+2. Title: e.g. `Linode deploy` or hostname
+3. Key: paste the public key from step 1
+4. **Allow write access: OFF** (read-only is enough for `git pull` deploys)
+
+The **same public key** can be added to multiple repos (fine for solo-maintained client sites on one VPS).
+
+#### 3. Set REPO to SSH in client config
+
+```bash
+# bin/provision/clients/starter.craftjd.conf
+REPO=git@github.com:craftjd/laravel-starter.git
+```
+
+Do **not** use `https://github.com/...` for private repos — it will prompt for credentials and fail non-interactively.
+
+#### 4. Verify before provisioning
+
+On the server as `deploy`:
+
+```bash
+ssh -T git@github.com
+# expect: "Hi ORG/REPO! You've successfully authenticated..."
+
+git ls-remote git@github.com:craftjd/laravel-starter.git HEAD
+# prints a commit SHA when access works
+```
+
+Then provision:
+
+```bash
+./bin/remote site starter.craftjd
+```
+
+#### 5. Ongoing deploys (`./bin/deploy`)
+
+`bin/deploy` runs `git pull` in the existing clone. The deploy key continues to work — no extra setup per deploy.
+
+#### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `Permission denied (publickey)` on clone | Deploy key not added to repo, or wrong `REPO` URL |
+| `git clone` asks for username/password | Use `git@github.com:ORG/repo.git`, not HTTPS |
+| `Could not read from remote` after repo rename | Update `REPO` in client config; on server: `git remote set-url origin NEW_URL` |
+| Multiple VPSes | Generate a separate deploy key per server; add each pubkey to the repos |
+
+#### 6. Rotate a deploy key
+
+Re-run with `--regenerate` when a key is compromised or you want a fresh key. The script backs up the old key pair, prints the **old** public key to remove from GitHub, then generates a new one.
+
+```bash
+./bin/remote github-key starter.craftjd --regenerate
+# prompts for confirmation (uses ssh -t)
+
+./bin/remote github-key starter.craftjd --regenerate --yes
+# non-interactive
+```
+
+On the server, old keys are kept as `~/.ssh/github_deploy.bak.TIMESTAMP` (+ `.pub`).
+
+After regenerating:
+
+1. **Delete** the old deploy key from **every** private repo on that VPS (GitHub → Settings → Deploy keys)
+2. **Add** the new public key printed by the script
+3. Verify: `git ls-remote git@github.com:ORG/repo.git HEAD` on the server, then `./bin/deploy` per site
+
+Until step 1–2 are done, `git pull` on private repos will fail.
+
+#### Alternative: HTTPS + token (not recommended)
+
+GitHub personal access tokens in clone URLs expire and end up in shell history. Use deploy keys instead.
 
 ### Configure `.env` (before first deploy)
 
@@ -264,7 +387,7 @@ sudo systemctl reload php8.3-fpm
 
 Submit the live `/contact` form and confirm mail (see **Mail — production** above).
 
-Add another brochure site on the same VPS: skip step 2, run `provision-site` again with a different `--domain` and `--repo`.
+Add another brochure site on the same VPS: reuse the same `IP` in a new client config, skip server + github-key, run `./bin/remote site NEW_CLIENT` only.
 
 ### 6. DNS, Cloudflare, and TLS
 
@@ -308,10 +431,10 @@ sudo systemctl reload php8.3-fpm
 ```bash
 ./bin/check
 # or against the public URL:
-CHECK_URL=https://starter.craftjd.com ./bin/check-web
+CHECK_URL=https://starter.craftjd.com ./bin/checks/web
 ```
 
-`bin/check-web` reads `APP_URL` from `.env` when `CHECK_URL` is unset. For local curls to `127.0.0.1`, it sends the `Host` header from `APP_URL` so nginx serves the correct vhost.
+`bin/checks/web` reads `APP_URL` from `.env` when `CHECK_URL` is unset.
 
 ### 5. Provisioning checklist
 
@@ -331,10 +454,31 @@ CHECK_URL=https://starter.craftjd.com ./bin/check-web
 
 ### Script reference
 
-| Script | Run as | Purpose |
-|--------|--------|---------|
-| `bin/provision-server --tier=flat-file\|app` | root | Once per VPS — packages, PHP, deploy user |
-| `bin/provision-site --domain=... --repo=... --tier=...` | deploy | Per client — clone, `.env`, nginx, optional SSL |
+`bin/` layout:
+
+```
+bin/
+  remote              # from laptop — server / github-key / site via client config
+  deploy              # on server — pull, build, migrate, cache
+  check               # on server — run all post-deploy checks
+  lib.sh              # shared helpers
+  provision/
+    server            # on VPS as root — once per server
+    site              # on VPS as deploy — per client
+    github-key        # on VPS as deploy — once per server (private repos)
+    clients/          # saved client configs (gitignored)
+  checks/
+    web php db mail storage
+```
+
+| Script | Where | Purpose |
+|--------|-------|---------|
+| `bin/remote server CLIENT` | laptop | Load client config, run `provision/server` |
+| `bin/remote github-key CLIENT [--regenerate] [--yes]` | laptop | Load client config, run `provision/github-key` |
+| `bin/remote site CLIENT` | laptop | Load client config, run `provision/site` |
+| `bin/provision/server --tier=...` | VPS (root) | Packages, PHP, deploy user |
+| `bin/provision/site --domain=...` | VPS (deploy) | Clone, `.env`, nginx, optional SSL |
+| `bin/provision/github-key` | VPS (deploy) | Generate GitHub deploy key (private repos) |
 
 `provision-site` options: `--ssl --cert-email=...`, `--db-name/user/pass` (app), `--deploy` (skip until `.env` mail is set).
 
@@ -372,13 +516,13 @@ Runs all domain checks in one pass:
 
 | Script | What it verifies |
 |--------|------------------|
-| `bin/check-web` | `GET /up`, `/`, `/sitemap.xml`, `/health` (if `MONITOR_KEY` set) |
-| `bin/check-php` | PHP 8.3+, required extensions, php-fpm (if systemd) |
-| `bin/check-db` | `php artisan db:show` |
-| `bin/check-mail` | `CONTACT_EMAIL`, SMTP host when `MAIL_MAILER=smtp` |
-| `bin/check-storage` | Writable `storage/`, `bootstrap/cache`, data dir |
+| `bin/checks/web` | `GET /up`, `/`, `/sitemap.xml`, `/health` (if `MONITOR_KEY` set) |
+| `bin/checks/php` | PHP 8.3+, required extensions, php-fpm (if systemd) |
+| `bin/checks/db` | `php artisan db:show` |
+| `bin/checks/mail` | `CONTACT_EMAIL`, SMTP host when `MAIL_MAILER=smtp` |
+| `bin/checks/storage` | Writable `storage/`, `bootstrap/cache`, data dir |
 
-Override web check base URL: `CHECK_URL=https://example.com ./bin/check-web` (defaults to `APP_URL` from `.env`)
+Override web check base URL: `CHECK_URL=https://example.com ./bin/checks/web` (defaults to `APP_URL` from `.env`)
 
 ### `/health` (hub monitoring)
 
@@ -405,8 +549,9 @@ Example response:
 
 | Task | Where |
 |------|-------|
-| First-time server setup | `bin/provision-server` then `bin/provision-site` — **Server provisioning** |
+| First-time server setup | client config → `./bin/remote server CLIENT` → `github-key` (private) → `./bin/remote site CLIENT` |
 | DNS, Cloudflare, and TLS | **Server provisioning** → step 6 |
+| Private GitHub deploy key | **Private GitHub repos** |
 | Deploy updates | `./bin/deploy` then `./bin/check` |
 | Add a Blade page | `resources/views/pages/{slug}.blade.php` |
 | Add markdown page | `resources/content/{slug}.md` |
