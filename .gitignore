@@ -15,6 +15,8 @@
 /.zed
 /auth.json
 /node_modules
+/bin/provision/clients/*.conf
+!/bin/provision/clients/_example.conf
 /public/build
 /public/fonts-manifest.dev.json
 /public/hot

@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BIN_ROOT="$(cd "$(dirname "$0")" && pwd)"
+source "${BIN_ROOT}/lib.sh"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  remote server     CLIENT_NAME
+  remote github-key CLIENT_NAME [--regenerate] [--yes]
+  remote site       CLIENT_NAME [options]
+
+  CLIENT_NAME   config in bin/provision/clients/CLIENT_NAME.conf
+
+Set up once per client:
+  cp bin/provision/clients/_example.conf bin/provision/clients/starter.craftjd.conf
+  # edit IP, TIER, DOMAIN, REPO, SSL, CERT_EMAIL
+
+Typical first-time flow:
+  ./bin/remote server starter.craftjd
+  ./bin/remote github-key starter.craftjd    # private GitHub repos only
+  ./bin/remote site starter.craftjd
+
+Site options (--ssl, --cert-email, --db-*) override values in the client config.
+EOF
+}
+
+require_client() {
+    CLIENT="${1:-}"
+    [[ -n "$CLIENT" && "$CLIENT" != -* ]] || { usage; exit 1; }
+}
+
+[[ $# -gt 0 ]] || { usage; exit 1; }
+
+CMD="$1"
+shift
+
+require_command scp
+require_command ssh
+
+case "$CMD" in
+    server)
+        require_client "${1:-}"
+        shift
+        [[ $# -eq 0 ]] || fail "unexpected arguments (use client config, not CLI flags)"
+        load_client_config "$CLIENT" server
+        USER="${PROVISION_USER:-root}"
+
+        for file in provision/server lib.sh; do
+            [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
+        done
+
+        echo "==> remote server (${USER}@${IP}, tier=${TIER}, client=${CLIENT})"
+        ok "loaded client config: ${CLIENT}"
+        ok "copying scripts"
+        scp "${BIN_ROOT}/provision/server" "${BIN_ROOT}/lib.sh" "${USER}@${IP}:~/"
+
+        ok "running provision/server"
+        ssh "${USER}@${IP}" "bash ~/server --tier=${TIER}"
+
+        echo
+        echo "Next:"
+        echo "  ./bin/remote github-key ${CLIENT}   # private GitHub repos"
+        echo "  ./bin/remote site ${CLIENT}"
+        ;;
+
+    github-key)
+        require_client "${1:-}"
+        shift
+
+        GITHUB_KEY_ARGS=()
+        REGEN=false
+        YES=false
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --regenerate | -f)
+                    GITHUB_KEY_ARGS+=("$1")
+                    REGEN=true
+                    ;;
+                --yes | -y)
+                    GITHUB_KEY_ARGS+=("$1")
+                    YES=true
+                    ;;
+                *) fail "unknown option for github-key: $1 (try --regenerate [--yes])" ;;
+            esac
+            shift
+        done
+
+        load_client_config "$CLIENT" server
+        USER="${PROVISION_USER:-deploy}"
+
+        for file in provision/github-key lib.sh; do
+            [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
+        done
+
+        SSH_OPTS=()
+        if [[ "$REGEN" == true && "$YES" != true ]]; then
+            SSH_OPTS=(-t)
+        fi
+
+        echo "==> remote github-key (${USER}@${IP}, client=${CLIENT})"
+        ok "loaded client config: ${CLIENT}"
+        ok "copying scripts"
+        scp "${BIN_ROOT}/provision/github-key" "${BIN_ROOT}/lib.sh" "${USER}@${IP}:~/"
+
+        ok "running provision/github-key"
+        # shellcheck disable=SC2029
+        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "REPO='${REPO:-}' bash ~/github-key ${GITHUB_KEY_ARGS[*]}"
+
+        echo
+        if [[ "$REGEN" == true ]]; then
+            echo "Next:"
+            echo "  Remove OLD deploy keys from each private repo, then add the NEW key above"
+            echo "  git ls-remote / ./bin/deploy on each site to verify"
+        else
+            echo "Next:"
+            echo "  Add the printed deploy key to each private repo (GitHub → Settings → Deploy keys)"
+            echo "  ./bin/remote site ${CLIENT}"
+        fi
+        ;;
+
+    site)
+        require_client "${1:-}"
+        shift
+        load_client_config "$CLIENT" site
+        ok "loaded client config: ${CLIENT}"
+
+        EXTRA=()
+        read -r -a CONFIG_EXTRA <<<"$(site_remote_extra_args)"
+        EXTRA=("${CONFIG_EXTRA[@]}" "$@")
+
+        USER="${PROVISION_USER:-deploy}"
+
+        for file in provision/site provision/github-key lib.sh; do
+            [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
+        done
+
+        REMOTE_CMD=(bash ~/site --domain="${DOMAIN}" --repo="${REPO}" --tier="${TIER}")
+        if [[ ${#EXTRA[@]} -gt 0 ]]; then
+            REMOTE_CMD+=("${EXTRA[@]}")
+        fi
+
+        echo "==> remote site (${USER}@${IP}, tier=${TIER}, domain=${DOMAIN}, client=${CLIENT})"
+        ok "copying scripts"
+        scp "${BIN_ROOT}/provision/site" "${BIN_ROOT}/provision/github-key" "${BIN_ROOT}/lib.sh" "${USER}@${IP}:~/"
+
+        ok "running provision/site"
+        # shellcheck disable=SC2029
+        ssh "${USER}@${IP}" "${REMOTE_CMD[*]}"
+
+        echo
+        echo "Next:"
+        echo "  ssh ${USER}@${IP}"
+        echo "  cd /var/www/${DOMAIN}"
+        echo "  nano .env && ./bin/deploy && sudo systemctl reload php8.3-fpm && ./bin/check"
+        ;;
+
+    -h | --help)
+        usage
+        ;;
+
+    *)
+        usage
+        exit 1
+        ;;
+esac

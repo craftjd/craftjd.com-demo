@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+    BIN_ROOT="${SCRIPT_DIR}"
+fi
+source "${BIN_ROOT}/lib.sh"
+
+KEY_NAME="github_deploy"
+REGENERATE=false
+CONFIRM_YES=false
+KEY_PATH=""
+SSH_CONFIG="${HOME}/.ssh/config"
+REPO="${REPO:-}"
+
+usage() {
+    cat <<'EOF'
+Usage: github-key [options] [KEY_NAME]
+
+Run on the VPS as the deploy user (once per server, before provision/site
+for private repos). Safe to run for public repos — the key is simply unused.
+
+  ./bin/remote github-key CLIENT_NAME
+  ./bin/remote github-key CLIENT_NAME --regenerate
+  ./bin/remote github-key CLIENT_NAME --regenerate --yes
+
+Options:
+  --regenerate, -f   Replace an existing deploy key (backs up the old key pair)
+  --yes, -y          Skip confirmation (required for non-interactive --regenerate)
+
+Creates an SSH deploy key, configures GitHub in ~/.ssh/config, and prints the
+public key to add to each private repo (Settings → Deploy keys → read-only).
+
+Default key name: github_deploy
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --regenerate | -f) REGENERATE=true ;;
+        --yes | -y) CONFIRM_YES=true ;;
+        -h | --help) usage; exit 0 ;;
+        -*) fail "unknown option: $1 (try --help)" ;;
+        *) KEY_NAME="$1" ;;
+    esac
+    shift
+done
+
+KEY_PATH="${HOME}/.ssh/${KEY_NAME}"
+
+configure_github_ssh_config() {
+    if [[ -f "$SSH_CONFIG" ]] && grep -q "Host github.com" "$SSH_CONFIG" 2>/dev/null; then
+        ok "github.com already in ~/.ssh/config"
+        return 0
+    fi
+
+    ok "configuring ~/.ssh/config for github.com"
+    cat >>"$SSH_CONFIG" <<EOF
+
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ${KEY_PATH}
+    IdentitiesOnly yes
+EOF
+    chmod 600 "$SSH_CONFIG"
+}
+
+backup_deploy_key() {
+    local timestamp suffix
+
+    timestamp="$(date +%Y%m%d%H%M%S)"
+    suffix=".bak.${timestamp}"
+
+    ok "backing up ${KEY_PATH} → ${KEY_PATH}${suffix}"
+    cp "${KEY_PATH}" "${KEY_PATH}${suffix}"
+    cp "${KEY_PATH}.pub" "${KEY_PATH}.pub${suffix}"
+}
+
+confirm_regenerate() {
+    if [[ "$CONFIRM_YES" == true ]]; then
+        return 0
+    fi
+
+    if [[ ! -t 0 ]]; then
+        fail "regenerate requires confirmation — re-run with --yes, or use: ssh -t deploy@SERVER 'bash ~/github-key --regenerate'"
+    fi
+
+    echo
+    warn "regenerating will invalidate the current deploy key on GitHub"
+    echo "       git pull will fail on private repos until you remove the old key" >&2
+    echo "       and add the new public key to each repo." >&2
+    echo >&2
+    read -r -p "Regenerate deploy key? [y/N] " reply
+    [[ "$reply" =~ ^[Yy]$ ]] || fail "aborted"
+}
+
+generate_deploy_key() {
+    ok "generating ${KEY_PATH}"
+    ssh-keygen -t ed25519 -C "deploy@$(hostname -f 2>/dev/null || hostname)" -f "${KEY_PATH}" -N ""
+    chmod 600 "${KEY_PATH}" "${KEY_PATH}.pub"
+}
+
+mkdir -p "${HOME}/.ssh"
+chmod 700 "${HOME}/.ssh"
+
+if [[ "$REGENERATE" == true && -f "${KEY_PATH}" ]]; then
+    confirm_regenerate
+
+    echo
+    echo "Remove this OLD deploy key from every private repo on this server:"
+    echo "  GitHub → repo → Settings → Deploy keys → delete matching key"
+    echo
+    cat "${KEY_PATH}.pub"
+    echo
+
+    backup_deploy_key
+    rm -f "${KEY_PATH}" "${KEY_PATH}.pub"
+fi
+
+if [[ ! -f "${KEY_PATH}" ]]; then
+    generate_deploy_key
+else
+    ok "using existing ${KEY_PATH}"
+    chmod 600 "${KEY_PATH}" "${KEY_PATH}.pub"
+fi
+
+configure_github_ssh_config
+
+if [[ -n "$REPO" ]] && github_repo_is_github "$REPO"; then
+    if github_repo_is_public "$REPO"; then
+        echo
+        ok "REPO is a public GitHub repo — deploy key is optional (clone uses HTTPS)"
+    else
+        echo
+        ok "REPO is a private GitHub repo — add the deploy key below to that repo"
+    fi
+fi
+
+echo
+if [[ "$REGENERATE" == true ]]; then
+    echo "Add this NEW deploy key to each private GitHub repo:"
+else
+    echo "Add this deploy key to each private GitHub repo:"
+fi
+echo "  Repo → Settings → Deploy keys → Add deploy key"
+echo "  Title: $(hostname -f 2>/dev/null || hostname) deploy"
+echo "  Allow write access: OFF (read-only)"
+echo
+cat "${KEY_PATH}.pub"
+echo
+echo "Test after updating deploy keys:"
+echo "  ssh -T git@github.com"
+echo "  git ls-remote git@github.com:YOUR_ORG/your-repo.git HEAD"
+echo
+if [[ "$REGENERATE" == true ]]; then
+    echo "Old key pairs were backed up alongside ${KEY_PATH} (*.bak.TIMESTAMP)."
+    echo "Delete the old deploy keys in GitHub before relying on git pull again."
+fi
