@@ -229,10 +229,13 @@ The script will:
 6. Write and enable an nginx vhost
 7. Optionally run Certbot (`SSL=true` or `--ssl` — covers `@` and `www`; DNS must point at the server first)
 
-It prints the generated `MONITOR_KEY`. **Edit `.env`** before going live:
+It prints the generated `MONITOR_KEY`. **Set site and mail settings in your client config**, then:
 
-- `APP_NAME`, `CONTACT_EMAIL`, `MAIL_*` (and `GA_MEASUREMENT_ID` if used)
-- App tier without `--db-*` flags: set `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` manually
+```bash
+./bin/remote env starter.craftjd push
+```
+
+- App tier without DB in config: set `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` in client config (or use `DB_NAME` / `DB_USER` / `DB_PASS`)
 
 ### Private GitHub repos
 
@@ -336,45 +339,63 @@ Until step 1–2 are done, `git pull` on private repos will fail.
 
 GitHub personal access tokens in clone URLs expire and end up in shell history. Use deploy keys instead.
 
-### Configure `.env` (before first deploy)
+### Configure `.env` (client config + env push)
 
-`provision-site` creates and seeds `.env` for you. If you cloned manually instead:
+Site and mail settings live in your **client config** on the laptop (`bin/provision/clients/CLIENT.conf`). The server `.env` is synced from there — no `nano .env` for routine changes.
+
+**Written automatically by `provision/site`:**
+
+| Variable | How |
+|----------|-----|
+| `APP_URL` | Set from `DOMAIN` + `SSL` |
+| `APP_KEY` | `php artisan key:generate` (never overwritten by env push) |
+| `MONITOR_KEY` | Random value generated and saved into `.env` — copy into client config if you poll `/health` from a hub |
+
+**Set in client config** (see `_example.conf`), then push:
+
+```bash
+./bin/remote env starter.craftjd push
+```
+
+Shows a diff against the server `.env` and asks `[Y/n]` before applying. Use `--yes` to skip confirmation.
+
+```bash
+./bin/remote env starter.craftjd push --yes   # non-interactive
+./bin/remote env starter.craftjd check        # validate config + server .env
+./bin/remote env starter.craftjd show         # server .env with secrets redacted
+```
+
+**Synced from client config:**
+
+| Variable | Notes |
+|----------|-------|
+| `APP_NAME`, `SITE_DESCRIPTION`, `CONTACT_EMAIL`, `GA_MEASUREMENT_ID` | Site identity |
+| `MAIL_*` | SMTP settings |
+| `MAIL_FROM_ADDRESS` | Defaults to `noreply@${DOMAIN}` |
+| `APP_URL` | Derived from `DOMAIN` + `SSL` |
+| `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | App tier (`DB_NAME` / `DB_USER` / `DB_PASS` aliases supported) |
+| `MONITOR_KEY`, `DEPLOY_BRANCH`, `CHECK_URL` | Only when set in client config |
+
+After push, refresh config cache on the server:
+
+```bash
+cd /var/www/client.com
+php artisan config:clear && php artisan config:cache
+./bin/check
+```
+
+Never commit `.env` or `*.conf`. Routine `./bin/deploy` does not modify `.env`.
+
+If you cloned manually instead of `provision/site`:
 
 ```bash
 cd /var/www/client.com
 cp .env.flat-file.example .env   # brochure — or .env.app.example for app tier
-nano .env
 php artisan key:generate
-# brochure only:
+# flat-file only:
 touch database/database.sqlite
+./bin/remote env CLIENT push
 ```
-
-**Written automatically by `provision-site`:**
-
-| Variable | How |
-|----------|-----|
-| `APP_URL` | Set from `--domain` (`https://` after `--ssl`) |
-| `APP_KEY` | `php artisan key:generate` |
-| `MONITOR_KEY` | Random value generated and **saved into `.env`** — also printed to the terminal; copy that line somewhere safe if you will poll `/health` from a hub |
-
-**You must edit manually** (`nano /var/www/client.com/.env`):
-
-```env
-APP_NAME="Client Site Name"
-CONTACT_EMAIL=owner@clientdomain.com
-
-MAIL_MAILER=smtp
-MAIL_HOST=smtp.example.com
-MAIL_PORT=587
-MAIL_USERNAME=...
-MAIL_PASSWORD=...
-MAIL_FROM_ADDRESS="noreply@clientdomain.com"
-MAIL_FROM_NAME="${APP_NAME}"
-```
-
-Optional: `GA_MEASUREMENT_ID`, `SITE_DESCRIPTION`. App tier: `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (unless you passed `--db-name/user/pass`).
-
-Never commit `.env`. Routine `./bin/deploy` does not modify it.
 
 ### 4. First deploy and verify
 
@@ -458,7 +479,7 @@ CHECK_URL=https://starter.craftjd.com ./bin/checks/web
 
 ```
 bin/
-  remote              # from laptop — server / github-key / site via client config
+  remote              # from laptop — server / github-key / site / env via client config
   deploy              # on server — pull, build, migrate, cache
   check               # on server — run all post-deploy checks
   lib.sh              # shared helpers
@@ -466,6 +487,7 @@ bin/
     server            # on VPS as root — once per server
     site              # on VPS as deploy — per client
     github-key        # on VPS as deploy — once per server (private repos)
+    env               # on VPS as deploy — sync .env from client config
     clients/          # saved client configs (gitignored)
   checks/
     web php db mail storage
@@ -476,11 +498,13 @@ bin/
 | `bin/remote server CLIENT` | laptop | Load client config, run `provision/server` |
 | `bin/remote github-key CLIENT [--regenerate] [--yes]` | laptop | Load client config, run `provision/github-key` |
 | `bin/remote site CLIENT` | laptop | Load client config, run `provision/site` |
+| `bin/remote env CLIENT push\|check\|show` | laptop | Sync or validate `.env` from client config |
 | `bin/provision/server --tier=...` | VPS (root) | Packages, PHP, deploy user |
 | `bin/provision/site --domain=...` | VPS (deploy) | Clone, `.env`, nginx, optional SSL |
 | `bin/provision/github-key` | VPS (deploy) | Generate GitHub deploy key (private repos) |
+| `bin/provision/env push\|check\|show` | VPS (deploy) | Apply or validate `.env` from client config |
 
-`provision-site` options: `--ssl --cert-email=...`, `--db-name/user/pass` (app), `--deploy` (skip until `.env` mail is set).
+`provision/site` options: `--ssl --cert-email=...`, `--db-name/user/pass` (app), `--deploy` (skip until `env push`).
 
 ---
 
@@ -549,7 +573,8 @@ Example response:
 
 | Task | Where |
 |------|-------|
-| First-time server setup | client config → `./bin/remote server CLIENT` → `github-key` (private) → `./bin/remote site CLIENT` |
+| First-time server setup | client config → `server` → `github-key` (private) → `site` → `env push` |
+| Manage site/mail settings | Edit `bin/provision/clients/CLIENT.conf` → `./bin/remote env CLIENT push` |
 | DNS, Cloudflare, and TLS | **Server provisioning** → step 6 |
 | Private GitHub deploy key | **Private GitHub repos** |
 | Deploy updates | `./bin/deploy` then `./bin/check` |

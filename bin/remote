@@ -10,19 +10,22 @@ Usage:
   remote server     CLIENT_NAME
   remote github-key CLIENT_NAME [--regenerate] [--yes]
   remote site       CLIENT_NAME [options]
+  remote env        CLIENT_NAME push|check|show [--yes]
 
   CLIENT_NAME   config in bin/provision/clients/CLIENT_NAME.conf
 
 Set up once per client:
   cp bin/provision/clients/_example.conf bin/provision/clients/starter.craftjd.conf
-  # edit IP, TIER, DOMAIN, REPO, SSL, CERT_EMAIL
+  # edit IP, TIER, DOMAIN, REPO, SSL, CERT_EMAIL, and site/mail settings
 
 Typical first-time flow:
   ./bin/remote server starter.craftjd
   ./bin/remote github-key starter.craftjd    # private GitHub repos only
   ./bin/remote site starter.craftjd
+  ./bin/remote env starter.craftjd push
 
 Site options (--ssl, --cert-email, --db-*) override values in the client config.
+Env push shows a diff and asks for confirmation before updating .env on the server.
 EOF
 }
 
@@ -57,10 +60,10 @@ case "$CMD" in
         scp "${BIN_ROOT}/provision/server" "${BIN_ROOT}/lib.sh" "${USER}@${IP}:~/"
 
         ok "running provision/server"
-        ssh "${USER}@${IP}" "bash ~/server --tier=${TIER}"
+        ssh "${USER}@${IP}" "INVOKED_VIA_REMOTE=1 bash ~/server --tier=${TIER}"
 
         echo
-        echo "Next:"
+        echo "Next (from your laptop):"
         echo "  ./bin/remote github-key ${CLIENT}   # private GitHub repos"
         echo "  ./bin/remote site ${CLIENT}"
         ;;
@@ -136,10 +139,10 @@ case "$CMD" in
             [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
         done
 
-        REMOTE_CMD=(bash ~/site --domain="${DOMAIN}" --repo="${REPO}" --tier="${TIER}")
-        if [[ ${#EXTRA[@]} -gt 0 ]]; then
-            REMOTE_CMD+=("${EXTRA[@]}")
-        fi
+        REMOTE_CMD="bash ~/site --domain=$(printf '%q' "$DOMAIN") --repo=$(printf '%q' "$REPO") --tier=$(printf '%q' "$TIER")"
+        for arg in "${EXTRA[@]}"; do
+            REMOTE_CMD+=" $(printf '%q' "$arg")"
+        done
 
         echo "==> remote site (${USER}@${IP}, tier=${TIER}, domain=${DOMAIN}, client=${CLIENT})"
         ok "copying scripts"
@@ -147,13 +150,72 @@ case "$CMD" in
 
         ok "running provision/site"
         # shellcheck disable=SC2029
-        ssh "${USER}@${IP}" "${REMOTE_CMD[*]}"
+        ssh "${USER}@${IP}" "$REMOTE_CMD"
 
         echo
         echo "Next:"
-        echo "  ssh ${USER}@${IP}"
-        echo "  cd /var/www/${DOMAIN}"
-        echo "  nano .env && ./bin/deploy && sudo systemctl reload php8.3-fpm && ./bin/check"
+        echo "  ./bin/remote env ${CLIENT} push"
+        echo "  ./bin/deploy && sudo systemctl reload php8.3-fpm && ./bin/check   # on server"
+        ;;
+
+    env)
+        require_client "${1:-}"
+        shift
+
+        ENV_SUBCMD="${1:-}"
+        shift
+        [[ -n "$ENV_SUBCMD" ]] || fail "usage: remote env CLIENT push|check|show"
+
+        CONFIRM_YES=false
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --yes | -y) CONFIRM_YES=true ;;
+                *) fail "unknown option for env: $1" ;;
+            esac
+            shift
+        done
+
+        case "$ENV_SUBCMD" in
+            push | check | show) ;;
+            *) fail "unknown env command: ${ENV_SUBCMD} (use push|check|show)" ;;
+        esac
+
+        load_client_config "$CLIENT" env
+        USER="${PROVISION_USER:-deploy}"
+
+        for file in provision/env lib.sh; do
+            [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
+        done
+
+        CONFIG_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
+        [[ -f "$CONFIG_SRC" ]] || fail "missing client config: ${CONFIG_SRC}"
+
+        SSH_OPTS=()
+        if [[ "$ENV_SUBCMD" == push && "$CONFIRM_YES" != true ]]; then
+            SSH_OPTS=(-t)
+        fi
+
+        REMOTE_CMD="bash ~/env $(printf '%q' "$ENV_SUBCMD") --domain=$(printf '%q' "$DOMAIN") --config=~/client.conf"
+        if [[ "$ENV_SUBCMD" == push && "$CONFIRM_YES" == true ]]; then
+            REMOTE_CMD+=" --yes"
+        fi
+
+        echo "==> remote env ${ENV_SUBCMD} (${USER}@${IP}, domain=${DOMAIN}, client=${CLIENT})"
+        ok "loaded client config: ${CLIENT}"
+        ok "copying scripts and client config"
+        scp "${BIN_ROOT}/provision/env" "${BIN_ROOT}/lib.sh" "${CONFIG_SRC}" "${USER}@${IP}:~/client.conf"
+
+        ok "running provision/env ${ENV_SUBCMD}"
+        # shellcheck disable=SC2029
+        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "$REMOTE_CMD"
+
+        if [[ "$ENV_SUBCMD" == push ]]; then
+            echo
+            echo "Next (on server):"
+            echo "  cd /var/www/${DOMAIN}"
+            echo "  php artisan config:clear && php artisan config:cache"
+            echo "  ./bin/check"
+        fi
         ;;
 
     -h | --help)

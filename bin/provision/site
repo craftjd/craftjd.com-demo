@@ -32,7 +32,7 @@ Options:
   --db-name=NAME        App tier: MySQL database name
   --db-user=USER        App tier: MySQL user
   --db-pass=PASS        App tier: MySQL password
-  --deploy              Run ./bin/deploy after setup (edit .env mail settings first)
+  --deploy              Run ./bin/deploy after setup (run env push first)
 
 From laptop:
   ./bin/remote site CLIENT_NAME
@@ -201,8 +201,8 @@ echo
 echo "Site scaffolded at ${SITE_DIR}"
 echo "MONITOR_KEY=${MONITOR_KEY}"
 echo
-echo "Edit .env before going live:"
-echo "  APP_NAME, CONTACT_EMAIL, MAIL_* (and GA_MEASUREMENT_ID if used)"
+echo "Set site and mail settings in your client config, then:"
+echo "  ./bin/remote env CLIENT_NAME push"
 if [[ "$TIER" == "app" && -z "$DB_NAME" ]]; then
     echo "  DB_DATABASE, DB_USERNAME, DB_PASSWORD (create MySQL database first)"
 fi
@@ -214,7 +214,7 @@ echo "  sudo systemctl reload php8.3-fpm"
 echo "  ./bin/check"
 
 if [[ "$RUN_DEPLOY" == true ]]; then
-    warn "running deploy (ensure .env mail settings are set)"
+    warn "running deploy (ensure env push has been run)"
     ./bin/deploy
     sudo_cmd systemctl reload php8.3-fpm
 fi

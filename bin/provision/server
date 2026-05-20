@@ -150,14 +150,18 @@ if [[ -f /etc/nginx/sites-enabled/default ]]; then
 fi
 
 echo
-echo "Server ready. Next:"
+echo "Server ready."
 if [[ ! -s /home/deploy/.ssh/authorized_keys ]] 2>/dev/null; then
     echo "  !  deploy SSH keys missing — fix keys (see warnings above), then re-run."
     echo
 fi
-echo "  ./bin/remote site CLIENT_NAME"
 
-if [[ "$TIER" == "app" ]]; then
-    echo
-    echo "App tier: pass --db-name/user/pass when provisioning the site."
+if [[ "${INVOKED_VIA_REMOTE:-}" != 1 ]]; then
+    echo "From your laptop:"
+    echo "  ./bin/remote github-key CLIENT_NAME   # private GitHub repos"
+    echo "  ./bin/remote site CLIENT_NAME"
+    if [[ "$TIER" == "app" ]]; then
+        echo
+        echo "App tier: set DB_NAME, DB_USER, DB_PASS in the client config (or pass --db-* flags)."
+    fi
 fi

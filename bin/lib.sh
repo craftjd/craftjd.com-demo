@@ -171,6 +171,10 @@ load_client_config() {
                     || fail "client config: set all of DB_NAME, DB_USER, DB_PASS for app tier"
             fi
             ;;
+        env)
+            [[ -n "${DOMAIN:-}" ]] \
+                || fail "client config must set DOMAIN for env management"
+            ;;
         *)
             fail "unknown client config mode: ${mode}"
             ;;
@@ -299,4 +303,162 @@ require_github_repo_access() {
     fi
 
     ok "deploy key can read private GitHub repo"
+}
+
+# --- Client config → .env sync ---
+
+client_env_is_secret() {
+    case "$1" in
+        APP_KEY | MONITOR_KEY | MAIL_PASSWORD | MAIL_USERNAME | DB_PASSWORD) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+client_env_format_display() {
+    local key="$1"
+    local value="$2"
+
+    if client_env_is_secret "$key"; then
+        if [[ -n "$value" ]]; then
+            echo "***"
+        else
+            echo "(empty)"
+        fi
+    elif [[ -z "$value" ]]; then
+        echo "(empty)"
+    else
+        echo "$value"
+    fi
+}
+
+client_env_add_if_set() {
+    local -n _desired="$1"
+    local key="$2"
+    local value="${3:-}"
+
+    [[ -n "$value" ]] && _desired["$key"]="$value"
+}
+
+client_env_collect_desired() {
+    local -n _desired="$1"
+    local app_url db_name db_user db_pass mail_from
+
+    if [[ -n "${DOMAIN:-}" ]]; then
+        app_url="http://${DOMAIN}"
+        if [[ "${SSL:-}" == true ]]; then
+            app_url="https://${DOMAIN}"
+        fi
+        _desired[APP_URL]="$app_url"
+    fi
+
+    client_env_add_if_set _desired APP_NAME "${APP_NAME:-}"
+    client_env_add_if_set _desired SITE_DESCRIPTION "${SITE_DESCRIPTION:-}"
+    client_env_add_if_set _desired CONTACT_EMAIL "${CONTACT_EMAIL:-}"
+    client_env_add_if_set _desired GA_MEASUREMENT_ID "${GA_MEASUREMENT_ID:-}"
+
+    client_env_add_if_set _desired MAIL_MAILER "${MAIL_MAILER:-}"
+    client_env_add_if_set _desired MAIL_HOST "${MAIL_HOST:-}"
+    client_env_add_if_set _desired MAIL_PORT "${MAIL_PORT:-}"
+    client_env_add_if_set _desired MAIL_USERNAME "${MAIL_USERNAME:-}"
+    client_env_add_if_set _desired MAIL_PASSWORD "${MAIL_PASSWORD:-}"
+    client_env_add_if_set _desired MAIL_SCHEME "${MAIL_SCHEME:-}"
+
+    mail_from="${MAIL_FROM_ADDRESS:-}"
+    if [[ -z "$mail_from" && -n "${DOMAIN:-}" ]]; then
+        mail_from="noreply@${DOMAIN}"
+    fi
+    client_env_add_if_set _desired MAIL_FROM_ADDRESS "$mail_from"
+
+    db_name="${DB_DATABASE:-${DB_NAME:-}}"
+    db_user="${DB_USERNAME:-${DB_USER:-}}"
+    db_pass="${DB_PASSWORD:-${DB_PASS:-}}"
+    client_env_add_if_set _desired DB_DATABASE "$db_name"
+    client_env_add_if_set _desired DB_USERNAME "$db_user"
+    client_env_add_if_set _desired DB_PASSWORD "$db_pass"
+
+    client_env_add_if_set _desired MONITOR_KEY "${MONITOR_KEY:-}"
+    client_env_add_if_set _desired DEPLOY_BRANCH "${DEPLOY_BRANCH:-}"
+    client_env_add_if_set _desired CHECK_URL "${CHECK_URL:-}"
+}
+
+client_env_sorted_keys() {
+    local -n _desired="$1"
+    printf '%s\n' "${!_desired[@]}" | sort
+}
+
+client_env_count_changes() {
+    local env_file="$1"
+    local -n _desired="$2"
+    local key old new count=0
+
+    for key in $(client_env_sorted_keys _desired); do
+        old="$(load_env_var "$key" "$env_file")"
+        new="${_desired[$key]}"
+        if [[ "$old" != "$new" ]]; then
+            count=$((count + 1))
+        fi
+    done
+
+    echo "$count"
+}
+
+client_env_print_diff() {
+    local env_file="$1"
+    local -n _desired="$2"
+    local key old new
+
+    for key in $(client_env_sorted_keys _desired); do
+        old="$(load_env_var "$key" "$env_file")"
+        new="${_desired[$key]}"
+        if [[ "$old" != "$new" ]]; then
+            echo "  ${key}"
+            echo "    - $(client_env_format_display "$key" "$old")"
+            echo "    + $(client_env_format_display "$key" "$new")"
+        fi
+    done
+}
+
+client_env_confirm_push() {
+    local confirm_yes="${1:-false}"
+
+    if [[ "$confirm_yes" == true ]]; then
+        return 0
+    fi
+
+    if [[ ! -t 0 ]]; then
+        fail "push requires confirmation — re-run with --yes, or use ssh -t (./bin/remote env CLIENT push)"
+    fi
+
+    local reply
+    read -r -p "Apply changes? [Y/n] " reply
+    [[ "${reply:-Y}" =~ ^[Yy]$ ]]
+}
+
+client_env_validate_config() {
+    [[ -n "${APP_NAME:-}" ]] || fail "client config: APP_NAME is required"
+    [[ -n "${CONTACT_EMAIL:-}" ]] || fail "client config: CONTACT_EMAIL is required"
+
+    local mail_mailer="${MAIL_MAILER:-smtp}"
+    if [[ "$mail_mailer" == "log" ]]; then
+        fail "client config: MAIL_MAILER must not be log for production"
+    fi
+
+    if [[ "$mail_mailer" == "smtp" ]]; then
+        [[ -n "${MAIL_HOST:-}" ]] || fail "client config: MAIL_HOST is required when MAIL_MAILER=smtp"
+    fi
+}
+
+client_env_validate_mail_domain() {
+    local env_file="$1"
+    local from domain from_domain
+
+    from="$(load_env_var MAIL_FROM_ADDRESS "$env_file")"
+    domain="${DOMAIN:-}"
+
+    [[ -n "$from" && -n "$domain" ]] || return 0
+
+    from_domain="${from##*@}"
+    if [[ "$from_domain" != "$domain" && "$from_domain" != *".${domain}" ]]; then
+        warn "MAIL_FROM_ADDRESS (${from}) is not on ${domain}"
+    fi
 }
