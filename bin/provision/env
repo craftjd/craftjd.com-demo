@@ -90,10 +90,15 @@ cmd_push() {
     done
 
     ok "updated ${change_count} key(s) in .env"
+
+    if [[ -f "${SITE_DIR}/artisan" ]]; then
+        ok "refreshing Laravel config cache"
+        (cd "$SITE_DIR" && php artisan config:clear --no-ansi -q && php artisan config:cache --no-ansi -q)
+    fi
+
     echo
     echo "Next:"
     echo "  cd ${SITE_DIR}"
-    echo "  php artisan config:clear && php artisan config:cache"
     echo "  ./bin/check"
 }
 
@@ -125,8 +130,11 @@ cmd_check() {
         ok "MONITOR_KEY"
     fi
 
-    if [[ "$(load_env_var MAIL_MAILER "$ENV_FILE")" == "log" ]]; then
-        fail "MAIL_MAILER=log is not suitable for production"
+    if [[ "$(load_env_var MAIL_MAILER "$ENV_FILE")" == "smtp" ]]; then
+        [[ -n "$(load_env_var MAIL_HOST "$ENV_FILE")" ]] || fail "MAIL_HOST is not set (smtp)"
+        ok "MAIL_HOST"
+    elif [[ "$(load_env_var MAIL_MAILER "$ENV_FILE")" == "log" ]]; then
+        warn "MAIL_MAILER=log — contact form logs to storage/logs (set smtp before go-live)"
     fi
 
     client_env_validate_mail_domain "$ENV_FILE"
