@@ -71,4 +71,21 @@ class HealthCheckTest extends TestCase
                 ],
             ]);
     }
+
+    public function test_mail_check_passes_with_log_mailer_when_contact_email_is_set(): void
+    {
+        $connection = Mockery::mock(Connection::class);
+        $connection->shouldReceive('getPdo')->once()->andReturn(Mockery::mock(\PDO::class));
+        DB::shouldReceive('connection')->once()->andReturn($connection);
+
+        config([
+            'starter.monitor.key' => 'secret-key',
+            'client.contact_email' => 'owner@example.com',
+            'mail.default' => 'log',
+        ]);
+
+        $this->get('/health', ['X-Monitor-Key' => 'secret-key'])
+            ->assertOk()
+            ->assertJsonPath('checks.mail', true);
+    }
 }

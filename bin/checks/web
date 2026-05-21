@@ -32,6 +32,19 @@ ok "/sitemap.xml"
 
 MONITOR_KEY="$(load_env_var MONITOR_KEY)"
 if [[ -n "$MONITOR_KEY" ]]; then
-    curl "${CURL_OPTS[@]}" -H "X-Monitor-Key: ${MONITOR_KEY}" "${BASE_URL}/health" >/dev/null || fail "GET /health"
-    ok "/health"
+    health_tmp="$(mktemp)"
+    health_code="$(curl -sS -o "$health_tmp" -w "%{http_code}" \
+        -H "X-Monitor-Key: ${MONITOR_KEY}" "${BASE_URL}/health" || true)"
+    if [[ "$health_code" == "200" ]]; then
+        ok "/health"
+    else
+        if [[ -s "$health_tmp" ]]; then
+            echo "  /health response: $(tr -d '\n' <"$health_tmp")" >&2
+        fi
+        if [[ "$health_code" == "503" ]]; then
+            fail "GET /health (HTTP 503 degraded — often stale config after .env changes; run: php artisan config:clear && php artisan config:cache)"
+        fi
+        fail "GET /health (HTTP ${health_code:-connection failed})"
+    fi
+    rm -f "$health_tmp"
 fi

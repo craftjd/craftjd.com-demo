@@ -213,7 +213,6 @@ case "$CMD" in
             echo
             echo "Next (on server):"
             echo "  cd /var/www/${DOMAIN}"
-            echo "  php artisan config:clear && php artisan config:cache"
             echo "  ./bin/check"
         fi
         ;;

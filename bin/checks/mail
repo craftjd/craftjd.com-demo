@@ -16,6 +16,8 @@ ok "CONTACT_EMAIL"
 if [[ "$MAIL_MAILER" == "smtp" ]]; then
     [[ -n "$(load_env_var MAIL_HOST)" ]] || fail "MAIL_HOST is not set (smtp)"
     ok "MAIL_HOST"
+elif [[ "$MAIL_MAILER" == "log" ]]; then
+    warn "MAIL_MAILER=log — contact form logs to storage/logs (set smtp before go-live)"
 fi
 
 ok "MAIL_MAILER=${MAIL_MAILER}"

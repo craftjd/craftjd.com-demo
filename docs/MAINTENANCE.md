@@ -79,7 +79,13 @@ Submissions write to `storage/logs/laravel.log`. Fine for quick checks, not for 
 
 ## Mail — production
 
-### 1. Required `.env` keys (every client)
+### Default until SMTP is configured
+
+New sites ship with `MAIL_MAILER=log` (`.env.flat-file.example`). The contact form works immediately — submissions are written to `storage/logs/laravel.log` on the server. This avoids broken SMTP connections during provisioning.
+
+Before go-live, set `MAIL_MAILER=smtp` and mail credentials in your client config, then `./bin/remote env CLIENT push`. `bin/checks/mail` warns while `log` is still active.
+
+### 1. Required `.env` keys for go-live (every client)
 
 ```env
 MAIL_MAILER=smtp
@@ -376,11 +382,10 @@ Shows a diff against the server `.env` and asks `[Y/n]` before applying. Use `--
 | `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | App tier (`DB_NAME` / `DB_USER` / `DB_PASS` aliases supported) |
 | `MONITOR_KEY`, `DEPLOY_BRANCH`, `CHECK_URL` | Only when set in client config |
 
-After push, refresh config cache on the server:
+After push, config cache is refreshed automatically. Then verify:
 
 ```bash
 cd /var/www/client.com
-php artisan config:clear && php artisan config:cache
 ./bin/check
 ```
 
@@ -551,6 +556,8 @@ Override web check base URL: `CHECK_URL=https://example.com ./bin/checks/web` (d
 ### `/health` (hub monitoring)
 
 When `MONITOR_KEY` is set in `.env`, `GET /health` returns JSON. Send the key in header `X-Monitor-Key`.
+
+Returns **200** when `db`, `storage`, and `mail` checks pass; **503** with `"status":"degraded"` when one fails (e.g. `CONTACT_EMAIL` missing from cached config — run `env push` or `php artisan config:clear && php artisan config:cache`).
 
 Without `MONITOR_KEY`, the endpoint returns 404 (hidden).
 

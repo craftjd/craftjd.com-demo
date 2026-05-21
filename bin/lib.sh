@@ -438,10 +438,7 @@ client_env_validate_config() {
     [[ -n "${APP_NAME:-}" ]] || fail "client config: APP_NAME is required"
     [[ -n "${CONTACT_EMAIL:-}" ]] || fail "client config: CONTACT_EMAIL is required"
 
-    local mail_mailer="${MAIL_MAILER:-smtp}"
-    if [[ "$mail_mailer" == "log" ]]; then
-        fail "client config: MAIL_MAILER must not be log for production"
-    fi
+    local mail_mailer="${MAIL_MAILER:-log}"
 
     if [[ "$mail_mailer" == "smtp" ]]; then
         [[ -n "${MAIL_HOST:-}" ]] || fail "client config: MAIL_HOST is required when MAIL_MAILER=smtp"

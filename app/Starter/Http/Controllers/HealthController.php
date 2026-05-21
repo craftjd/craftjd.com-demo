@@ -58,10 +58,13 @@ class HealthController extends Controller
             return false;
         }
 
-        if (config('mail.default') === 'smtp' && ! config('mail.mailers.smtp.host')) {
+        $mailer = config('mail.default');
+
+        if ($mailer === 'smtp' && ! config('mail.mailers.smtp.host')) {
             return false;
         }
 
+        // log (and other non-smtp drivers) are valid until SMTP is configured
         return true;
     }
 
