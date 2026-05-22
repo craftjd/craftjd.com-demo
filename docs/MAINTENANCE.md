@@ -24,7 +24,57 @@ git push -u origin main
 
 Replace `ORG/CLIENT-REPO` with the client repo. All later commands run from this directory.
 
-### 3. Customize the site
+### 3. Local development (WSL)
+
+From the project root:
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate
+npm ci && npm run build
+```
+
+Set `APP_NAME`, `CONTACT_EMAIL`, and Sail IDs in `.env`:
+
+```bash
+printf 'WWWUSER=%s\nWWWGROUP=%s\n' "$(id -u)" "$(id -g)" >> .env
+```
+
+(`id -u` / `id -g` override the placeholder `1000` values in `.env.example`.)
+
+**Sail (recommended):**
+
+```bash
+./vendor/bin/sail up -d
+./vendor/bin/sail npm run dev    # Vite — separate terminal
+```
+
+| URL | Purpose |
+|-----|---------|
+| http://localhost | Site |
+| http://localhost:8025 | Mailhog (contact form) |
+
+Contact form mail uses `MAIL_HOST=mailhog` from `.env.example`. Stop: `./vendor/bin/sail down`.
+
+**Without Docker:**
+
+```bash
+composer run dev
+# or: php artisan serve
+```
+
+Uses `MAIL_MAILER=log` — submissions in `storage/logs/laravel.log`.
+
+Shortcut (runs setup script above):
+
+```bash
+composer run setup
+```
+
+### 4. Customize the site
 
 Edit and commit as needed:
 
@@ -34,7 +84,7 @@ Edit and commit as needed:
 
 Push to the client repo when ready.
 
-### 4. Client config
+### 5. Client config
 
 ```bash
 cp bin/provision/clients/_example.conf bin/provision/clients/CLIENT.conf
@@ -55,7 +105,7 @@ Edit `CLIENT.conf`:
 
 Configs are gitignored. Never commit `*.conf` or `.env`.
 
-### 5. DNS
+### 6. DNS
 
 Point **both** records at the VPS IP before `SSL=true`:
 
@@ -66,7 +116,7 @@ Point **both** records at the VPS IP before `SSL=true`:
 
 If using Cloudflare (proxied): set SSL/TLS to **Flexible** until Certbot succeeds, then **Full (strict)**.
 
-### 6. Provision server (new VPS only)
+### 7. Provision server (new VPS only)
 
 ```bash
 ./bin/remote server CLIENT
@@ -76,7 +126,7 @@ Installs nginx, PHP 8.3, Composer, Node, Certbot, `deploy` user. Idempotent — 
 
 **App tier** adds MySQL and Redis. **Skip this step** when adding another site to an existing VPS.
 
-### 7. GitHub deploy key (private repos only)
+### 8. GitHub deploy key (private repos only)
 
 ```bash
 ./bin/remote github-key CLIENT
@@ -86,7 +136,7 @@ Add the printed public key to the client repo: **Settings → Deploy keys** (rea
 
 Skip if the repo is public.
 
-### 8. Provision site
+### 9. Provision site
 
 ```bash
 ./bin/remote site CLIENT
@@ -96,7 +146,7 @@ Clones to `/var/www/DOMAIN`, seeds `.env`, nginx vhost, optional Certbot (`SSL=t
 
 **Second site on same VPS:** new `CLIENT.conf` (same `IP`, new `DOMAIN`/`REPO`), skip steps 6–7, run step 8 only.
 
-### 9. Push env to server
+### 10. Push env to server
 
 ```bash
 ./bin/remote env CLIENT push
@@ -109,7 +159,7 @@ Syncs client config → server `.env`. Shows a diff and asks `[Y/n]` before appl
 ./bin/remote env CLIENT show     # redacted .env on server
 ```
 
-### 10. Deploy and verify (on server)
+### 11. Deploy and verify (on server)
 
 ```bash
 ssh deploy@IP
@@ -121,7 +171,7 @@ sudo systemctl reload php8.3-fpm
 
 Contact form works with `MAIL_MAILER=log` (submissions in `storage/logs/laravel.log`).
 
-### 11. Go-live
+### 12. Go-live
 
 1. Set `MAIL_MAILER=smtp` and SMTP credentials in `CLIENT.conf`
 2. `./bin/remote env CLIENT push`
@@ -189,7 +239,7 @@ Contact form: `pages/contact` → `Livewire/ContactForm` → mail to `CONTACT_EM
 
 ### Mail — local dev
 
-Mailhog via Sail — see `compose.yaml` + `.env` with `MAIL_HOST=mailhog`. Without Docker, `MAIL_MAILER=log` is fine.
+`.env.example` ships with Mailhog + Sail. Submit `/contact`, read mail at http://localhost:8025. Without Sail, set `MAIL_MAILER=log`.
 
 ### Mail — production SMTP
 
