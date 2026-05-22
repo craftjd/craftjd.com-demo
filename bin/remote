@@ -15,14 +15,14 @@ Usage:
   CLIENT_NAME   config in bin/provision/clients/CLIENT_NAME.conf
 
 Set up once per client:
-  cp bin/provision/clients/_example.conf bin/provision/clients/starter.craftjd.conf
-  # edit IP, TIER, DOMAIN, REPO, SSL, CERT_EMAIL, and site/mail settings
+  cp bin/provision/clients/_example.conf bin/provision/clients/CLIENT.conf
+  # edit CLIENT.conf — see docs/MAINTENANCE.md
 
 Typical first-time flow:
-  ./bin/remote server starter.craftjd
-  ./bin/remote github-key starter.craftjd    # private GitHub repos only
-  ./bin/remote site starter.craftjd
-  ./bin/remote env starter.craftjd push
+  ./bin/remote server CLIENT
+  ./bin/remote github-key CLIENT    # private GitHub repos only
+  ./bin/remote site CLIENT
+  ./bin/remote env CLIENT push
 
 Site options (--ssl, --cert-email, --db-*) override values in the client config.
 Env push shows a diff and asks for confirmation before updating .env on the server.
