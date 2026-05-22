@@ -34,7 +34,6 @@ cp .env.example .env
 php artisan key:generate
 touch database/database.sqlite
 php artisan migrate
-npm ci && npm run build
 ```
 
 Set `APP_NAME`, `CONTACT_EMAIL`, and Sail IDs in `.env`:
@@ -49,8 +48,11 @@ printf 'WWWUSER=%s\nWWWGROUP=%s\n' "$(id -u)" "$(id -g)" >> .env
 
 ```bash
 ./vendor/bin/sail up -d
+./vendor/bin/sail npm ci && ./vendor/bin/sail npm run build
 ./vendor/bin/sail npm run dev    # Vite — separate terminal
 ```
+
+Run **npm only through Sail** — do not run `npm` on the host first; mixed installs cause `vite: Permission denied` in the container.
 
 | URL | Purpose |
 |-----|---------|
@@ -62,17 +64,12 @@ Contact form mail uses `MAIL_HOST=mailhog` from `.env.example`. Stop: `./vendor/
 **Without Docker:**
 
 ```bash
+npm ci && npm run build
 composer run dev
 # or: php artisan serve
 ```
 
 Uses `MAIL_MAILER=log` — submissions in `storage/logs/laravel.log`.
-
-Shortcut (runs setup script above):
-
-```bash
-composer run setup
-```
 
 ### 4. Customize the site
 
