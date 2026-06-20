@@ -1,50 +1,36 @@
 <div>
     @if ($submitted)
-        <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-green-800">
-            <p class="font-medium">Thanks for your message.</p>
-            <p class="mt-1 text-sm">We'll be in touch soon.</p>
+        <div class="demo-notice" role="status">
+            <p class="font-semibold text-pine-900">Message received.</p>
+            <p class="mt-1 text-stone-700">Thanks — we'd reply if this were live. Nothing was sent anywhere.</p>
         </div>
-    @else
-        @if (! config('client.contact_email'))
-            <div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 text-sm">
-                Set <code class="rounded bg-amber-100 px-1">CONTACT_EMAIL</code> in your environment to enable the contact form.
-            </div>
-        @endif
-
-        <form wire:submit="submit" class="space-y-6">
-            {{-- Honeypot --}}
-            <div class="hidden" aria-hidden="true">
-                <label for="website">Website</label>
-                <input type="text" id="website" wire:model="website" tabindex="-1" autocomplete="off">
-            </div>
-
-            <div>
-                <label for="name" class="form-label">Name</label>
-                <input type="text" id="name" wire:model="name" class="form-input" required>
-                @error('name') <p class="form-error">{{ $message }}</p> @enderror
-            </div>
-
-            <div>
-                <label for="email" class="form-label">Email</label>
-                <input type="email" id="email" wire:model="email" class="form-input" required>
-                @error('email') <p class="form-error">{{ $message }}</p> @enderror
-            </div>
-
-            <div>
-                <label for="message" class="form-label">Message</label>
-                <textarea id="message" wire:model="message" rows="5" class="form-input" required></textarea>
-                @error('message') <p class="form-error">{{ $message }}</p> @enderror
-            </div>
-
-            <button
-                type="submit"
-                class="btn btn-primary"
-                wire:loading.attr="disabled"
-                @disabled(! config('client.contact_email'))
-            >
-                <span wire:loading.remove>Send message</span>
-                <span wire:loading>Sending…</span>
-            </button>
-        </form>
     @endif
+
+    <form wire:submit="submit" class="mt-6 space-y-5 {{ $submitted ? 'opacity-60' : '' }}" @if ($submitted) aria-disabled="true" @endif>
+        <div>
+            <label for="contact-name" class="form-label">Name</label>
+            <input id="contact-name" type="text" wire:model.blur="name" class="form-input" autocomplete="name" @disabled($submitted)>
+            @error('name') <p class="form-error">{{ $message }}</p> @enderror
+        </div>
+
+        <div>
+            <label for="contact-email" class="form-label">Email</label>
+            <input id="contact-email" type="email" wire:model.blur="email" class="form-input" autocomplete="email" @disabled($submitted)>
+            @error('email') <p class="form-error">{{ $message }}</p> @enderror
+        </div>
+
+        <div>
+            <label for="contact-subject" class="form-label">Subject <span class="font-normal text-stone-500">(optional)</span></label>
+            <input id="contact-subject" type="text" wire:model.blur="subject" class="form-input" @disabled($submitted)>
+            @error('subject') <p class="form-error">{{ $message }}</p> @enderror
+        </div>
+
+        <div>
+            <label for="contact-message" class="form-label">Message</label>
+            <textarea id="contact-message" wire:model.blur="message" rows="5" class="form-input" @disabled($submitted)></textarea>
+            @error('message') <p class="form-error">{{ $message }}</p> @enderror
+        </div>
+
+        <button type="submit" class="btn btn-primary" @disabled($submitted)>Send message</button>
+    </form>
 </div>
