@@ -4,18 +4,18 @@ use App\Starter\Services\MarkdownRenderer;
 
 return [
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Site Identity
   |--------------------------------------------------------------------------
   */
 
-  'site_name' => env('APP_NAME', 'My Site'),
-  'site_description' => env('SITE_DESCRIPTION', ''),
-  'site_url' => env('APP_URL', 'http://localhost'),
-  'contact_email' => env('CONTACT_EMAIL'),
+    'site_name' => env('APP_NAME', "Joe's"),
+    'site_description' => env('SITE_DESCRIPTION', 'Drinkable Coffee.'),
+    'site_url' => env('APP_URL', 'http://localhost'),
+    'contact_email' => env('CONTACT_EMAIL'),
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Navigation
   |--------------------------------------------------------------------------
@@ -24,56 +24,59 @@ return [
   |
   */
 
-  'navigation' => [
-    ['label' => 'Home', 'url' => '/'],
-    ['label' => 'Services', 'url' => '/services'],
-    ['label' => 'Records', 'url' => '/records'],
-    ['label' => 'About', 'url' => '/about'],
-    ['label' => 'Contact', 'url' => '/contact'],
-  ],
+    'navigation' => [
+        ['label' => 'Coffee', 'url' => '#coffee'],
+        ['label' => 'Food', 'url' => '#food'],
+        ['label' => 'Specials', 'url' => '#specials'],
+        ['label' => 'Takeout', 'url' => '#takeout'],
+        ['label' => 'Hours', 'url' => '#hours'],
+        ['label' => 'Team', 'url' => '#team'],
+        ['label' => 'Contact', 'url' => '#contact'],
+        ['label' => 'Club', 'url' => '#club'],
+    ],
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Social & SEO
   |--------------------------------------------------------------------------
   */
 
-  'social' => [
-    // 'twitter' => 'https://twitter.com/handle',
-    // 'linkedin' => 'https://linkedin.com/company/example',
-    // 'facebook' => null,
-    // 'instagram' => null,
-  ],
+    'social' => [
+        // 'twitter' => 'https://twitter.com/handle',
+        // 'linkedin' => 'https://linkedin.com/company/example',
+        // 'facebook' => null,
+        // 'instagram' => null,
+    ],
 
-  'seo' => [
-    'og_image' => null,
-    'twitter_handle' => null,
-    'robots' => 'index, follow',
-  ],
+    'seo' => [
+        'og_image' => null,
+        'twitter_handle' => null,
+        'robots' => 'index, follow',
+    ],
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Analytics
   |--------------------------------------------------------------------------
   */
 
-  'analytics' => [
-    'google_analytics_id' => env('GA_MEASUREMENT_ID'),
-  ],
+    'analytics' => [
+        'google_analytics_id' => env('GA_MEASUREMENT_ID'),
+    ],
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Branding
   |--------------------------------------------------------------------------
   */
 
-  'theme' => [
-    'logo' => null,
-    'logo_alt' => null,
-    'footer_text' => null,
-  ],
+    'theme' => [
+        'logo' => null,
+        'logo_alt' => null,
+        'footer_text' => 'Independent coffee shop. No franchise. No nonsense.',
+    ],
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Feature Overrides
   |--------------------------------------------------------------------------
@@ -82,12 +85,12 @@ return [
   |
   */
 
-  'features' => [
-      // 'flat_file_content' => true,
-      // 'blog' => false,
-  ],
+    'features' => [
+        // 'flat_file_content' => true,
+        // 'blog' => false,
+    ],
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Content Overrides
   |--------------------------------------------------------------------------
@@ -97,19 +100,19 @@ return [
   |
   */
 
-  'content' => [
-      // 'home_slug' => 'home',
-      // 'home_view' => 'home',
-  ],
+    'content' => [
+        // 'home_slug' => 'home',
+        // 'home_view' => 'home',
+    ],
 
-  /*
+    /*
   |--------------------------------------------------------------------------
   | Service Bindings
   |--------------------------------------------------------------------------
   */
 
-  'bindings' => [
-    'content_renderer' => MarkdownRenderer::class,
-  ],
+    'bindings' => [
+        'content_renderer' => MarkdownRenderer::class,
+    ],
 
 ];

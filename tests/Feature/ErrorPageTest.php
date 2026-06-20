@@ -10,7 +10,8 @@ class ErrorPageTest extends TestCase
     {
         $this->get('/this-page-does-not-exist')
             ->assertNotFound()
-            ->assertSee('Page not found')
-            ->assertSee('Back to home');
+            ->assertSee('Not on the menu', false)
+            ->assertSee('Back to the counter', false)
+            ->assertSee('See the menu', false);
     }
 }

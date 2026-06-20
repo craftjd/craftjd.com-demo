@@ -25,7 +25,7 @@
     @endif
 </head>
 
-<body class="flex min-h-full flex-col font-sans antialiased bg-white text-gray-900">
+<body class="flex min-h-full flex-col">
     <x-nav />
     <main class="flex-1">
         @hasSection('content')

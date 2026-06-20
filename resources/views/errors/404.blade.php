@@ -1,16 +1,26 @@
 @extends('layouts.base')
 
-@section('title', 'Page not found')
+@section('title', '404 — Not on the menu')
+@section('meta_description', 'That page is not here. Try the menu.')
 
 @section('content')
-    <section class="section">
-        <div class="container max-w-lg text-center">
-            <p class="text-sm font-semibold uppercase tracking-wider text-blue-600">404</p>
-            <h1 class="mt-2 text-4xl font-bold text-gray-900">Page not found</h1>
-            <p class="mt-4 text-gray-600">
-                The page you're looking for doesn't exist or may have been moved.
+    <section class="error-page">
+        <div class="site-wrap error-page__inner">
+            <x-joes.logo-mark class="error-page__mark" />
+
+            <p class="error-page__code">404</p>
+            <h1 class="error-page__title">Not on the menu.</h1>
+            <p class="error-page__lead">
+                Whatever you asked for, we don't have it. No back room. No secret URL. You're in the wrong line.
             </p>
-            <a href="{{ url('/') }}" class="btn btn-primary mt-8">Back to home</a>
+            <p class="error-page__aside">
+                If you were looking for coffee, food, or directions — those actually exist.
+            </p>
+
+            <div class="error-page__actions">
+                <a href="{{ url('/') }}" class="btn btn-primary">Back to the counter</a>
+                <a href="{{ url('/#coffee') }}" class="btn btn-secondary">See the menu</a>
+            </div>
         </div>
     </section>
 @endsection
