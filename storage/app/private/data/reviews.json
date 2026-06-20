@@ -1,0 +1,35 @@
+{
+  "intro": "Unsolicited. Unpaid. Mostly accurate.",
+  "featured": {
+    "quote": "Best cortado I've had outside the city. No attitude with it.",
+    "author": "R.T.",
+    "context": "Regular, mornings",
+    "rating": 5
+  },
+  "items": [
+    {
+      "quote": "They ran out of buns at 1pm and told me straight. I respect that more than a rain check.",
+      "author": "Dana M.",
+      "context": "First visit",
+      "rating": 5
+    },
+    {
+      "quote": "Thermos fill policy is weird. Price is fair. Coffee is better than fair.",
+      "author": "Chris P.",
+      "context": "Weekly pickup",
+      "rating": 4
+    },
+    {
+      "quote": "My kid likes the hot chocolate. I like that nobody tried to upsell me a size I didn't ask for.",
+      "author": "Helen W.",
+      "context": "Weekends",
+      "rating": 5
+    },
+    {
+      "quote": "Pour-over was ready in six minutes and they didn't act like I was asking for a favor.",
+      "author": "Marcus L.",
+      "context": "Afternoon drop-in",
+      "rating": 5
+    }
+  ]
+}

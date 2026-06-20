@@ -1,0 +1,59 @@
+{
+  "intro": "Baked everyday starting at 5am.",
+  "image": {
+    "src": "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80",
+    "alt": "Fresh pastries on a wooden board"
+  },
+  "categories": [
+    {
+      "name": "Morning",
+      "items": [
+        {
+          "name": "Morning Bun",
+          "price": "4.50",
+          "note": "Cardamom, orange peel, more butter than strictly necessary."
+        },
+        {
+          "name": "Egg & Cheddar on Roll",
+          "price": "6.50",
+          "note": "Salt, pepper, hot sauce on the counter if you want it."
+        },
+        {
+          "name": "Granola Bowl",
+          "price": "7.00",
+          "note": "Yogurt, honey, whatever fruit looked good at delivery."
+        }
+      ]
+    },
+    {
+      "name": "Midday",
+      "items": [
+        {
+          "name": "Soup of the Day",
+          "price": "5.50",
+          "note": "Written on the board. Not on this website. That's intentional."
+        },
+        {
+          "name": "Grilled Cheese",
+          "price": "7.50",
+          "note": "Sharp cheddar, sourdough, no truffle oil. Ever."
+        }
+      ]
+    },
+    {
+      "name": "To go",
+      "items": [
+        {
+          "name": "Trail Bar",
+          "price": "3.50",
+          "note": "Oats, nuts, chocolate. Holds up in a coat pocket."
+        },
+        {
+          "name": "Whole Fruit",
+          "price": "2.00",
+          "note": "Apple or banana. Depends what survived delivery."
+        }
+      ]
+    }
+  ]
+}

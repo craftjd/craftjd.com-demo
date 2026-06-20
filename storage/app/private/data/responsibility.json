@@ -1,0 +1,19 @@
+{
+  "intro": "Nothing fancy — just what we actually do.",
+  "sourcing": {
+    "title": "What we source",
+    "items": [
+      { "icon": "bean", "text": "Coffee from importers we can name; every roast batch logged" },
+      { "icon": "farm", "text": "Regional eggs and dairy when the supply chain cooperates" },
+      { "icon": "label", "text": "Whole, oat, and 2% milk — allergens posted at the counter daily" }
+    ]
+  },
+  "community": {
+    "title": "What we give back",
+    "items": [
+      { "icon": "cup", "text": "Discount for reusable cups; spent grounds free for local gardens" },
+      { "icon": "people", "text": "Open jobs posted in-shop before they go online" },
+      { "icon": "energy", "text": "Roasting scheduled off-peak to lighten the load on the grid" }
+    ]
+  }
+}

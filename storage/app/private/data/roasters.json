@@ -1,0 +1,11 @@
+{
+  "intro": "Beans on bar right now — rotated as weekly, selected for season.",
+  "roasters": [
+    { "name": "Ridge Line Roasters", "origin": "Colombia, Ethiopia" },
+    { "name": "Summit View Coffee", "origin": "Guatemala" },
+    { "name": "Hollow Tree Imports", "origin": "Kenya, Rwanda" },
+    { "name": "North County Beans", "origin": "Brazil" },
+    { "name": "Cedar & Stone", "origin": "Peru" },
+    { "name": "Trailhead Trading Co.", "origin": "Nicaragua" }
+  ]
+}

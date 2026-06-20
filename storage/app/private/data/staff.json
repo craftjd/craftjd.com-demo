@@ -1,0 +1,29 @@
+{
+  "intro": "Fictional crew — illustrated stand-ins, not real people.",
+  "members": [
+    {
+      "name": "Joe Harlan",
+      "role": "Owner / Head Roaster",
+      "caricature": "joe",
+      "bio": "Former trail crew lead. Started roasting because camp coffee was an insult. Still refuses to stock flavored syrups."
+    },
+    {
+      "name": "Mara Chen",
+      "role": "Kitchen Lead",
+      "caricature": "mara",
+      "bio": "Baker by trade, early riser by necessity. Writes the soup board in chalk nobody can read but everyone understands."
+    },
+    {
+      "name": "Elliot Voss",
+      "role": "Bar Manager",
+      "caricature": "elliot",
+      "bio": "Dialing in espresso since 2019. Will tell you exactly why your home grinder matters, then stop if you look tired."
+    },
+    {
+      "name": "Sam Ortiz",
+      "role": "Weekend Counter",
+      "caricature": "sam",
+      "bio": "College nearby, patience abundant. Knows every regular's order and never makes it weird."
+    }
+  ]
+}

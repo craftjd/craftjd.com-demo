@@ -1,0 +1,65 @@
+{
+  "intro": "Roasted on-site. No secret process — just honest coffee.",
+  "categories": [
+    {
+      "name": "Espresso bar",
+      "items": [
+        {
+          "name": "Espresso",
+          "price": "2.75",
+          "note": "Single shot. Double if you ask like you mean it."
+        },
+        {
+          "name": "Americano",
+          "price": "3.25",
+          "note": "Hot water pretending to be fancy. Still good."
+        },
+        {
+          "name": "Cortado",
+          "price": "4.00",
+          "note": "The size that makes sense. We don't know why this isn't standard everywhere."
+        },
+        {
+          "name": "Latte",
+          "price": "4.50",
+          "note": "Whole milk default. Oat on request — no lecture attached."
+        }
+      ]
+    },
+    {
+      "name": "Brewed",
+      "items": [
+        {
+          "name": "House Drip",
+          "price": "2.50",
+          "note": "Refills before 10am. After that, you're buying friendship."
+        },
+        {
+          "name": "Pour-Over",
+          "price": "5.00",
+          "note": "Single origin rotates weekly. Ask what's on."
+        },
+        {
+          "name": "Cold Brew",
+          "price": "4.25",
+          "note": "Steeped overnight. Strong enough to notice, smooth enough to finish."
+        }
+      ]
+    },
+    {
+      "name": "Not coffee",
+      "items": [
+        {
+          "name": "Hot Chocolate",
+          "price": "3.50",
+          "note": "Real cocoa. One size. No whipped cream tower."
+        },
+        {
+          "name": "Steamer",
+          "price": "3.00",
+          "note": "Steamed milk, honey optional. For kids and honest adults."
+        }
+      ]
+    }
+  ]
+}

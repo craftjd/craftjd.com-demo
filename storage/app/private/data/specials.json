@@ -1,0 +1,35 @@
+{
+  "intro": "Rotates weekly. When it's gone, it's gone.",
+  "categories": [
+    {
+      "name": "This week",
+      "items": [
+        {
+          "name": "Trail Mix Latte",
+          "price": "5.50",
+          "note": "Almond, dried cherry, dark chocolate shavings. This week only."
+        },
+        {
+          "name": "Double Shot + Pastry",
+          "price": "6.00",
+          "note": "Before 9am. Saves you thinking."
+        }
+      ]
+    },
+    {
+      "name": "Standing deals",
+      "items": [
+        {
+          "name": "Thermos Fill",
+          "price": "4.00",
+          "note": "Bring your own. We don't sell cups bigger than 20oz. Policy."
+        },
+        {
+          "name": "End-of-Day Pastries",
+          "price": "2.00",
+          "note": "After 2pm, whatever's left. No guarantees."
+        }
+      ]
+    }
+  ]
+}

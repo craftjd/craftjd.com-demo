@@ -1,0 +1,29 @@
+{
+  "intro": "We buy direct when we can. We label allergens. We don't hide behind 'natural flavors.'",
+  "sections": [
+    {
+      "title": "Coffee",
+      "items": [
+        "Single-origin beans from rotating importers",
+        "Roasted on a 12kg drum — profile logged every batch",
+        "Whole, oat, and 2% milk on bar"
+      ]
+    },
+    {
+      "title": "Kitchen",
+      "items": [
+        "Eggs from a regional farm — name on the board",
+        "Flour: unbleached, no bromate",
+        "Allergens posted daily; ask before you assume"
+      ]
+    },
+    {
+      "title": "What we skip",
+      "items": [
+        "Artificial syrups in the default lineup",
+        "Palm oil in baked goods",
+        "Ingredients we can't pronounce on the sign"
+      ]
+    }
+  ]
+}

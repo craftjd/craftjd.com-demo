@@ -1,0 +1,19 @@
+{
+  "headline": "Find the shop",
+  "intro": "We're on Ridge Line Road — the county highway most map apps label wrong. Look for the green awning and the smell of roast.",
+  "directions": [
+    {
+      "title": "From the highway",
+      "text": "Exit at Mile Marker 14, north on Ridge Line 2.4 miles. We're on the left after the gravel pull-off — white building, pine-green awning."
+    },
+    {
+      "title": "Parking",
+      "text": "Street spots out front. Small lot behind the building if the front is full — alley access between the hardware store and us."
+    },
+    {
+      "title": "When GPS fails",
+      "text": "Call us. Seriously. Half our first-timers call from the gravel pull-off. We don't mind."
+    }
+  ],
+  "map_label": "214 Ridge Line Rd"
+}

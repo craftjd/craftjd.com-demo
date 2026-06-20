@@ -1,0 +1,10 @@
+{
+  "intro": "Hours shift with weather and staffing. Call if you're driving far.",
+  "schedule": [
+    { "days": "Monday – Friday", "hours": "6:00am – 4:00pm" },
+    { "days": "Saturday", "hours": "7:00am – 3:00pm" },
+    { "days": "Sunday", "hours": "8:00am – 2:00pm" },
+    { "days": "Holidays", "hours": "Reduced — check the door sign" }
+  ],
+  "note": "Kitchen closes 30 minutes before listed time. Last call for espresso: 15 minutes before close."
+}

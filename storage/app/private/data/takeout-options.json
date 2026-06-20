@@ -1,0 +1,17 @@
+{
+  "intro": "Order here. Pick up at the counter. We call your name — not a number.",
+  "options": [
+    {
+      "title": "Counter Pickup",
+      "description": "Order online, skip the line. Ready in 10–15 minutes on quiet days; longer when we're slammed."
+    },
+    {
+      "title": "Phone-Ahead",
+      "description": "Call before you leave. We'll have drip and pastries staged. Espresso drinks when you arrive."
+    },
+    {
+      "title": "Bulk Beans",
+      "description": "Whole bags for home. Ground on request. Tell us your brew method — we'll adjust."
+    }
+  ]
+}

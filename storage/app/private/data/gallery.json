@@ -1,0 +1,31 @@
+{
+  "intro": "Scenes from the bar, the trail, and the days in between.",
+  "handle": "@joes.coffee",
+  "photos": [
+    {
+      "src": "https://images.unsplash.com/photo-1511920170033-f8396924c348?auto=format&fit=crop&w=800&q=80",
+      "alt": "Barista pouring latte art at the counter",
+      "span": "wide"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=600&q=80",
+      "alt": "Customers at cafe tables near the window",
+      "span": "tall"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80",
+      "alt": "Mountain ridge above the tree line",
+      "span": "square"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80",
+      "alt": "Steaming cups lined up on the bar",
+      "span": "wide"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1442512595331-e89e73853f31?auto=format&fit=crop&w=600&q=80",
+      "alt": "Morning light through the shop front",
+      "span": "square"
+    }
+  ]
+}
