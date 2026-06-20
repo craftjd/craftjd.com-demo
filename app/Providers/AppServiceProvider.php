@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Services\DeployMeta;
+use App\Services\SiteContent;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -11,7 +14,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(SiteContent::class);
+        $this->app->singleton(DeployMeta::class);
     }
 
     /**
@@ -19,6 +23,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        View::composer('pages.home', function ($view) {
+            $view->with('content', app(SiteContent::class));
+        });
     }
 }
