@@ -41,11 +41,20 @@ php artisan view:cache
 mkdir -p storage/app
 
 GIT_SHA="$(git rev-parse HEAD)"
+GIT_COMMIT_MESSAGE="$(git log -1 --format=%B HEAD)"
 DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+REQUEST_ID="${REQUEST_ID:-}"
 
-cat > storage/app/deploy-meta.json <<EOF
-{"git_sha":"${GIT_SHA}","deployed_at":"${DEPLOYED_AT}"}
-EOF
+if [[ -n "$REQUEST_ID" && ! "$REQUEST_ID" =~ ^[0-9]+$ ]]; then
+    fail "REQUEST_ID must be a positive integer (got: ${REQUEST_ID})"
+fi
 
-ok "deploy meta written (${GIT_SHA:0:7})"
+export GIT_SHA GIT_COMMIT_MESSAGE DEPLOYED_AT REQUEST_ID
+write_deploy_meta_json storage/app/deploy-meta.json
+
+if [[ -n "$REQUEST_ID" ]]; then
+    ok "deploy meta written (${GIT_SHA:0:7}, request #${REQUEST_ID})"
+else
+    ok "deploy meta written (${GIT_SHA:0:7})"
+fi
 echo "Deploy complete. Run: ./bin/check"

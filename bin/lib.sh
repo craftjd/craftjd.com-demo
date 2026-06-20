@@ -24,6 +24,76 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "missing command: $1"
 }
 
+# Write storage/app/deploy-meta.json with safe JSON encoding.
+# Expects env: GIT_SHA, DEPLOYED_AT, GIT_COMMIT_MESSAGE; optional REQUEST_ID, DEPLOY_SUMMARY.
+write_deploy_meta_json() {
+    local path="${1:-storage/app/deploy-meta.json}"
+
+    require_command php
+
+    DEPLOY_META_PATH="$path" php -r '
+        $path = getenv("DEPLOY_META_PATH") ?: "storage/app/deploy-meta.json";
+        $existing = [];
+
+        if (is_file($path)) {
+            $decoded = json_decode((string) file_get_contents($path), true);
+            if (is_array($decoded)) {
+                $existing = $decoded;
+            }
+        }
+
+        $entry = [
+            "git_sha" => (string) (getenv("GIT_SHA") ?: ""),
+            "deployed_at" => (string) (getenv("DEPLOYED_AT") ?: ""),
+            "git_commit_message" => trim((string) (getenv("GIT_COMMIT_MESSAGE") ?: "")),
+        ];
+
+        $requestId = getenv("REQUEST_ID");
+        if (is_string($requestId) && $requestId !== "") {
+            $entry["request_id"] = (int) $requestId;
+        }
+
+        $summary = trim((string) (getenv("DEPLOY_SUMMARY") ?: ""));
+        if ($summary !== "") {
+            $entry["summary"] = $summary;
+        }
+
+        $deployments = is_array($existing["deployments"] ?? null) ? $existing["deployments"] : [];
+
+        if ($deployments === [] && is_string($existing["git_sha"] ?? null) && $existing["git_sha"] !== "") {
+            $previous = [
+                "git_sha" => $existing["git_sha"],
+                "deployed_at" => (string) ($existing["deployed_at"] ?? ""),
+                "git_commit_message" => trim((string) ($existing["git_commit_message"] ?? "")),
+            ];
+
+            if (isset($existing["request_id"])) {
+                $previous["request_id"] = (int) $existing["request_id"];
+            }
+
+            if (is_string($existing["summary"] ?? null) && trim($existing["summary"]) !== "") {
+                $previous["summary"] = trim($existing["summary"]);
+            }
+
+            $deployments[] = $previous;
+        }
+
+        $knownShas = array_column($deployments, "git_sha");
+        if ($entry["git_sha"] !== "" && ! in_array($entry["git_sha"], $knownShas, true)) {
+            array_unshift($deployments, $entry);
+        }
+
+        $deployments = array_slice($deployments, 0, 20);
+
+        $meta = $entry + ["deployments" => $deployments];
+
+        file_put_contents(
+            $path,
+            json_encode($meta, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE).PHP_EOL
+        );
+    '
+}
+
 set_env_var() {
     local key="$1"
     local value="$2"
