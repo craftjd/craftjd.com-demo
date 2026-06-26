@@ -53,8 +53,10 @@ export GIT_SHA GIT_COMMIT_MESSAGE DEPLOYED_AT REQUEST_ID
 write_deploy_meta_json storage/app/deploy-meta.json
 
 if [[ -n "$REQUEST_ID" ]]; then
-    ok "deploy meta written (${GIT_SHA:0:7}, request #${REQUEST_ID})"
+    ok "recording deploy for claim #${REQUEST_ID} (${GIT_SHA:0:7})"
+    php artisan joes:record-deploy "$REQUEST_ID" "$GIT_SHA" "$DEPLOYED_AT"
 else
     ok "deploy meta written (${GIT_SHA:0:7})"
 fi
+
 echo "Deploy complete. Run: ./bin/check"

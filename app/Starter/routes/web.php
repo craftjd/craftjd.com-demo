@@ -34,6 +34,10 @@ Route::get('/robots.txt', function () {
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
+if (is_file(base_path('routes/web.php'))) {
+    require base_path('routes/web.php');
+}
+
 Route::get('/{slug}', [BasePageController::class, 'show'])
     ->where('slug', '[a-zA-Z0-9_\-\/]+')
     ->name('page');
