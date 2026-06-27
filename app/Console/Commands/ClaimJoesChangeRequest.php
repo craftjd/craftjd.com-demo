@@ -2,28 +2,38 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\MainSiteRequestAlreadyCompleted;
 use App\Services\JoesFulfillmentService;
 use Illuminate\Console\Command;
 use RuntimeException;
 
 class ClaimJoesChangeRequest extends Command
 {
-    protected $signature = 'joes:claim {mainRequestId : Main site Joe\'s change request ID}';
+    protected $signature = 'joes:claim {publicId : Main site request public ID (UUID)}';
 
     protected $description = 'Claim a main-site change request before editing and deploying';
 
     public function handle(JoesFulfillmentService $fulfillments): int
     {
-        $mainRequestId = (int) $this->argument('mainRequestId');
-
-        if ($mainRequestId < 1) {
-            $this->components->error('mainRequestId must be a positive integer.');
-
-            return self::FAILURE;
-        }
+        $publicId = (string) $this->argument('publicId');
 
         try {
-            $claim = $fulfillments->claim($mainRequestId);
+            $claim = $fulfillments->claimFromMainSite($publicId);
+        } catch (MainSiteRequestAlreadyCompleted $exception) {
+            $preview = $exception->preview;
+            $this->components->warn("Request #{$preview->number} was already fulfilled on the main site.");
+
+            if ($preview->completedAt) {
+                $this->line('Fulfilled: '.$preview->completedAt
+                    ->timezone(config('app.timezone'))
+                    ->format('M j, Y g:i A T'));
+            }
+
+            if ($preview->fulfillmentSummary) {
+                $this->line('Summary: '.$preview->fulfillmentSummary);
+            }
+
+            return self::SUCCESS;
         } catch (RuntimeException $exception) {
             $this->components->error($exception->getMessage());
 
@@ -31,8 +41,11 @@ class ClaimJoesChangeRequest extends Command
         }
 
         $this->components->info("Claimed main-site request #{$claim->main_request_id}.");
-        $this->line('Next: edit Joe\'s, then REQUEST_ID='.$mainRequestId.' ./bin/deploy');
-        $this->line('Then: ./bin/fulfill '.$mainRequestId.' "summary of changes"');
+        $this->line('Public ID: '.$claim->main_request_public_id);
+        $this->line('Next: edit Joe\'s, then REQUEST_PUBLIC_ID='.$publicId.' ./bin/deploy');
+        $this->line('Local dev: REQUEST_PUBLIC_ID='.$publicId.' ./bin/deploy-local');
+        $this->line('Then: ./bin/fulfill '.$publicId.' "summary of changes"');
+        $this->line('Mistake? ./bin/abandon '.$publicId);
 
         return self::SUCCESS;
     }

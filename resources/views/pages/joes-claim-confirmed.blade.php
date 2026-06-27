@@ -15,8 +15,9 @@
         </p>
         <ol class="type-body mt-8 m-0 grid list-decimal gap-3 ps-5">
             <li>Edit Joe's Cafe for this request.</li>
-            <li>Deploy with <code>REQUEST_ID={{ $mainRequestId }} ./bin/deploy</code>.</li>
-            <li>Verify the live site, then run <code>./bin/fulfill {{ $mainRequestId }} "summary of changes"</code>.</li>
+            <li>Deploy with <code>REQUEST_PUBLIC_ID={{ $publicId }} ./bin/deploy</code>.</li>
+            <li>Verify the live site, then run <code>./bin/fulfill {{ $publicId }} "summary of changes"</code>.</li>
+            <li>Wrong request? <code>./bin/abandon {{ $publicId }}</code></li>
         </ol>
     </div>
 @endsection

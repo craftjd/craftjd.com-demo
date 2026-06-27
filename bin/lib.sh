@@ -6,6 +6,77 @@ BIN_ROOT="${BIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 ok() { echo "  ok  $1"; }
 fail() { echo "  FAIL  $1" >&2; exit 1; }
 warn() { echo "  warn  $1"; }
+step() { echo "  →  $1"; }
+
+# Local Sail: bin scripts use ./vendor/bin/sail artisan when vendor/bin/sail exists.
+# Production / plain PHP dev: uses host php artisan (Sail not in vendor with --no-dev).
+# Override: JOES_BIN_PHP=1 ./bin/fulfill …  forces host php even when Sail is present.
+use_sail_artisan() {
+    if [[ "${JOES_BIN_PHP:-}" == "1" ]]; then
+        return 1
+    fi
+
+    local root
+    root="$(project_root)"
+    [[ -x "${root}/vendor/bin/sail" ]]
+}
+
+artisan() {
+    local root
+    root="$(project_root)"
+
+    if use_sail_artisan; then
+        (cd "$root" && ./vendor/bin/sail artisan "$@")
+    else
+        (cd "$root" && php artisan "$@")
+    fi
+}
+
+run_php() {
+    local root
+    root="$(project_root)"
+
+    if use_sail_artisan; then
+        (cd "$root" && ./vendor/bin/sail php "$@")
+    else
+        php "$@"
+    fi
+}
+
+require_artisan_runner() {
+    if use_sail_artisan; then
+        require_command docker
+    else
+        require_command php
+    fi
+}
+
+# Short hints when Joe's deploy/fulfill fails git validation.
+explain_joes_git_failure() {
+    local msg="$1"
+
+    if [[ "$msg" == *"matches the SHA recorded at claim"* ]] \
+        || [[ "$msg" == *"matches the git SHA from claim"* ]]; then
+        echo "  hint: deploy SHA equals the SHA captured at claim time." >&2
+        echo "        Production: commit your edits, then REQUEST_PUBLIC_ID=… ./bin/deploy" >&2
+        echo "        Local dev:    REQUEST_PUBLIC_ID=… ./bin/deploy-local (no new commit required)" >&2
+    fi
+
+    if [[ "$msg" == *"not ahead of the claim SHA"* ]] \
+        || [[ "$msg" == *"Rollback deploys"* ]]; then
+        echo "  hint: deploy SHA is older than (or not descended from) the claim SHA." >&2
+        echo "        Re-open the claim link after a rollback, then deploy forward commits." >&2
+        echo "        Local dev: REQUEST_PUBLIC_ID=… ./bin/deploy-local with JOES_LOCAL_DEPLOY_BYPASS_GIT=true in .env" >&2
+    fi
+
+    if [[ "$msg" == *"No deploy recorded for this claim"* ]]; then
+        echo "  hint: run REQUEST_PUBLIC_ID=… ./bin/deploy (production) or ./bin/deploy-local (local) before fulfill." >&2
+    fi
+
+    if [[ "$msg" == *"No pending claim"* ]]; then
+        echo "  hint: open the signed claim link, or: php artisan joes:claim {public-id} (bin/* uses Sail when vendor/bin/sail exists)" >&2
+    fi
+}
 
 project_root() {
     cd "${BIN_ROOT}/.." && pwd
@@ -29,9 +100,7 @@ require_command() {
 write_deploy_meta_json() {
     local path="${1:-storage/app/deploy-meta.json}"
 
-    require_command php
-
-    DEPLOY_META_PATH="$path" php -r '
+    DEPLOY_META_PATH="$path" run_php -r '
         $path = getenv("DEPLOY_META_PATH") ?: "storage/app/deploy-meta.json";
         $existing = [];
 

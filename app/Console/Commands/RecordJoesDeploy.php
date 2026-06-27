@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\JoesChangeFulfillment;
 use App\Services\JoesFulfillmentService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -10,23 +11,18 @@ use RuntimeException;
 class RecordJoesDeploy extends Command
 {
     protected $signature = 'joes:record-deploy
-        {mainRequestId : Main site Joe\'s change request ID}
+        {publicId : Main site request public ID (UUID)}
         {gitSha : Deployed git SHA}
-        {deployedAt : Deploy timestamp (ISO 8601)}';
+        {deployedAt : Deploy timestamp (ISO 8601)}
+        {--local : Local testing — skip git descendant checks (no new commit required)}';
 
     protected $description = 'Record deploy metadata on a pending Joe\'s change fulfillment';
 
     public function handle(JoesFulfillmentService $fulfillments): int
     {
-        $mainRequestId = (int) $this->argument('mainRequestId');
+        $publicId = (string) $this->argument('publicId');
         $gitSha = (string) $this->argument('gitSha');
         $deployedAtRaw = (string) $this->argument('deployedAt');
-
-        if ($mainRequestId < 1) {
-            $this->components->error('mainRequestId must be a positive integer.');
-
-            return self::FAILURE;
-        }
 
         try {
             $deployedAt = Carbon::parse($deployedAtRaw);
@@ -36,8 +32,10 @@ class RecordJoesDeploy extends Command
             return self::FAILURE;
         }
 
+        $localBypassGit = (bool) $this->option('local');
+
         try {
-            $fulfillment = $fulfillments->recordDeploy($mainRequestId, $gitSha, $deployedAt);
+            $fulfillment = $fulfillments->recordDeploy($publicId, $gitSha, $deployedAt, $localBypassGit);
         } catch (RuntimeException $exception) {
             $this->components->error($exception->getMessage());
 
@@ -45,7 +43,12 @@ class RecordJoesDeploy extends Command
         }
 
         $this->components->info("Recorded deploy for request #{$fulfillment->main_request_id} ({$gitSha}).");
-        $this->line('Next: ./bin/fulfill '.$mainRequestId.' "summary of changes"');
+
+        if ($localBypassGit) {
+            $this->line('Local mode: git descendant checks were skipped.');
+        }
+
+        $this->line('Next: ./bin/fulfill '.$publicId.' "summary of changes"');
 
         return self::SUCCESS;
     }

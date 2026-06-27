@@ -8,25 +8,32 @@ source "${BIN_ROOT}/lib.sh"
 
 cd "$ROOT"
 
-require_command php
+require_artisan_runner
 
 usage() {
     echo "Usage:" >&2
-    echo "  ./bin/fulfill REQUEST_ID \"summary of changes\"" >&2
+    echo "  ./bin/fulfill PUBLIC_ID \"summary of changes\"" >&2
     echo >&2
     echo "Workflow:" >&2
-    echo "  1. Open the claim link from the main-site email (or: php artisan joes:claim REQUEST_ID)" >&2
-    echo "  2. Edit Joe's Cafe, then REQUEST_ID=42 ./bin/deploy" >&2
-    echo "  3. Verify the live site, then ./bin/fulfill 42 \"Updated summer hours.\"" >&2
+    echo "  1. Open the claim link from the main-site email (or: php artisan joes:claim PUBLIC_ID)" >&2
+    echo "  2. Edit Joe's Cafe, then REQUEST_PUBLIC_ID=… ./bin/deploy-local (Sail) or ./bin/deploy (server)" >&2
+    echo "  3. Review the preview and choose Fulfill, Abandon, or Keep pending" >&2
     exit 1
 }
 
-REQUEST_ID="${1:-}"
+PUBLIC_ID="${1:-}"
 SUMMARY="${2:-}"
 
-if [[ -z "$REQUEST_ID" || -z "$SUMMARY" ]]; then
+if [[ -z "$PUBLIC_ID" || -z "$SUMMARY" ]]; then
     usage
 fi
 
-echo "==> fulfill #${REQUEST_ID}"
-php artisan joes:fulfill "$REQUEST_ID" "$SUMMARY"
+echo "==> fulfill ${PUBLIC_ID}"
+if use_sail_artisan; then
+    step "via Sail — fetch preview, confirm, notify main site"
+else
+    step "fetch request preview from main site, confirm, then notify main site"
+fi
+
+# Run directly — do not capture output in $(). Command substitution breaks the interactive prompt.
+artisan joes:fulfill "$PUBLIC_ID" "$SUMMARY"
