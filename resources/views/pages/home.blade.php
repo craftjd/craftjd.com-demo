@@ -4,7 +4,44 @@
 @section('meta_description', config('client.site_description'))
 
 @section('content')
-    <x-joes.hero :hero="$content->get('hero')" />
+    <x-joes.hero :hero="$content->get('hero')">
+        @php $specials = $content->get('specials'); @endphp
+        @if ($specials)
+            <div id="specials" class="mt-16 sm:mt-20 max-w-4xl">
+                <p class="font-display text-xs font-bold uppercase tracking-[0.2em] text-clay-400">Specials</p>
+                @if (! empty($specials['intro']))
+                    <p class="mt-2 max-w-prose text-base leading-relaxed text-pine-100/70">{{ $specials['intro'] }}</p>
+                @endif
+                <div class="mt-8 grid gap-6 sm:grid-cols-2 sm:gap-x-10 lg:gap-x-14">
+                    @foreach ($content->categories('specials') as $category)
+                        <div>
+                            @if (! empty($category['name']))
+                                <h3 class="mb-4 font-display text-xs font-bold uppercase tracking-[0.18em] text-clay-500">{{ $category['name'] }}</h3>
+                            @endif
+                            <div class="space-y-0">
+                                @foreach ($category['items'] ?? [] as $item)
+                                    <div class="flex items-baseline justify-between gap-4 py-1.5">
+                                        <div class="min-w-0">
+                                            <div class="flex items-baseline gap-2">
+                                                <span class="text-base font-semibold text-cream sm:text-lg">{{ $item['name'] }}</span>
+                                                <span class="min-w-[0.75rem] flex-1 border-b border-dotted border-cream/20"></span>
+                                            </div>
+                                            @if (! empty($item['note']))
+                                                <p class="mt-0.5 max-w-md text-sm leading-snug text-pine-100/60">{{ $item['note'] }}</p>
+                                            @endif
+                                        </div>
+                                        @if (! empty($item['price']))
+                                            <span class="shrink-0 font-display text-lg font-bold tabular-nums text-cream/80">${{ $item['price'] }}</span>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+    </x-joes.hero>
 
     <x-joes.photo-gallery :gallery="$content->get('gallery')" />
 
@@ -15,7 +52,6 @@
                 <nav class="menu-jump" aria-label="Menu sections">
                     <a href="#coffee" class="menu-jump__link">Coffee</a>
                     <a href="#food" class="menu-jump__link">Food</a>
-                    <a href="#specials" class="menu-jump__link">Specials</a>
                 </nav>
                 <x-joes.section-heading
                     number="01"
@@ -62,22 +98,6 @@
                         >
                     </figure>
                 @endif
-            </div>
-        </section>
-
-        {{-- Specials --}}
-        <section id="specials" class="section-block section-block--menu pb-16 sm:pb-20 lg:pb-24">
-            <div class="site-wrap max-w-4xl">
-                <div class="section-inset section-inset--accent">
-                    <x-joes.section-heading
-                        number="03"
-                        title="Specials"
-                        :lead="$content->string('specials', 'intro')"
-                    />
-                    <div class="mt-6">
-                        <x-joes.menu-list :categories="$content->categories('specials')" />
-                    </div>
-                </div>
             </div>
         </section>
     </div>
@@ -193,17 +213,8 @@
                 </address>
             </div>
 
-            <div class="mt-8 grid gap-8 lg:grid-cols-12 lg:items-start">
-                <div class="lg:col-span-7">
-                    <x-joes.location-map :location="$location" :contact="$contact" />
-                </div>
-
-                <div class="lg:col-span-5">
-                  <div class="contact-form-panel">
-                    <h3 class="font-display text-xl font-bold text-ink">Send a message</h3>
-                    <livewire:contact-form />
-                  </div>
-                </div>
+            <div class="mt-8">
+                <x-joes.location-map :location="$location" :contact="$contact" />
             </div>
         </div>
     </section>
