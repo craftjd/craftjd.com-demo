@@ -60,7 +60,7 @@ ok "apt update"
 sudo_cmd apt-get update -qq
 sudo_cmd DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq
 
-PACKAGES=(nginx git unzip curl software-properties-common)
+PACKAGES=(nginx git unzip curl software-properties-common sqlite3)
 
 ok "installing base packages"
 sudo_cmd DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${PACKAGES[@]}"

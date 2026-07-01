@@ -9,23 +9,28 @@ else
 fi
 source "${BIN_ROOT}/lib.sh"
 
+# Read config from .conf file (default: site.conf, override with a conf path).
+CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
+
+[[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
+# shellcheck disable=SC1090
+source "$CONF_FILE"
+shift 2>/dev/null || true
+
 KEY_NAME="github_deploy"
 REGENERATE=false
 CONFIRM_YES=false
-KEY_PATH=""
 SSH_CONFIG="${HOME}/.ssh/config"
 REPO="${REPO:-}"
 
 usage() {
     cat <<'EOF'
-Usage: github-key [options] [KEY_NAME]
+Usage: github-key [options] [CONF_FILE]
 
 Run on the VPS as the deploy user (once per server, before provision/site
 for private repos). Safe to run for public repos — the key is simply unused.
 
-  ./bin/remote github-key CLIENT_NAME
-  ./bin/remote github-key CLIENT_NAME --regenerate
-  ./bin/remote github-key CLIENT_NAME --regenerate --yes
+Reads REPO from the given .conf file to determine if the site uses private repos.
 
 Options:
   --regenerate, -f   Replace an existing deploy key (backs up the old key pair)
@@ -34,7 +39,6 @@ Options:
 Creates an SSH deploy key, configures GitHub in ~/.ssh/config, and prints the
 public key to add to each private repo (Settings → Deploy keys → read-only).
 
-Default key name: github_deploy
 EOF
 }
 
@@ -43,8 +47,7 @@ while [[ $# -gt 0 ]]; do
         --regenerate | -f) REGENERATE=true ;;
         --yes | -y) CONFIRM_YES=true ;;
         -h | --help) usage; exit 0 ;;
-        -*) fail "unknown option: $1 (try --help)" ;;
-        *) KEY_NAME="$1" ;;
+        *) fail "unknown option: $1 (try --help)" ;;
     esac
     shift
 done

@@ -10,14 +10,12 @@ fi
 source "${BIN_ROOT}/lib.sh"
 
 CMD=""
-DOMAIN=""
-CONFIG_FILE=""
 CONFIRM_YES=false
 WEB_ROOT="/var/www"
 
 usage() {
     cat <<'EOF'
-Usage: env push|check|show --domain=DOMAIN --config=CONFIG_FILE [options]
+Usage: env push|check|show [options] [CONF_FILE]
 
 Sync client .conf values into the site .env on the server.
 
@@ -28,20 +26,32 @@ Sync client .conf values into the site .env on the server.
 Options:
   --yes, -y   Skip confirmation on push (non-interactive)
 
-From laptop:
-  ./bin/remote env CLIENT push
-  ./bin/remote env CLIENT check
-  ./bin/remote env CLIENT show
+CONF_FILE defaults to bin/provision/clients/site.conf.
 EOF
 }
 
+# First positional arg: subcommand (push|check|show)
+CMD="${1:-}"
+[[ -n "$CMD" ]] || { usage; exit 1; }
+case "$CMD" in
+    push | check | show) shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) fail "unknown command: $1 (use push, check, or show)" ;;
+esac
+
+# Second positional arg: conf path (default: site.conf)
+CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
+[[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
+shift 2>/dev/null || true
+
+# shellcheck disable=SC1090
+source "$CONF_FILE"
+
+[[ -n "${DOMAIN:-}" ]] || fail "config must set DOMAIN"
+
+# Remaining flags: --yes only
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        push | check | show) CMD="$1" ;;
-        --domain=*) DOMAIN="${1#*=}" ;;
-        --domain) DOMAIN="${2:?}"; shift ;;
-        --config=*) CONFIG_FILE="${1#*=}" ;;
-        --config) CONFIG_FILE="${2:?}"; shift ;;
         --yes | -y) CONFIRM_YES=true ;;
         -h | --help) usage; exit 0 ;;
         *) fail "unknown argument: $1 (try --help)" ;;
@@ -49,16 +59,11 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-[[ -n "$CMD" && -n "$DOMAIN" && -n "$CONFIG_FILE" ]] || { usage; exit 1; }
-[[ -f "$CONFIG_FILE" ]] || fail "missing config: ${CONFIG_FILE}"
-
-# shellcheck disable=SC1090
-source "$CONFIG_FILE"
-
 validate_tier "${TIER:-flat-file}"
 
-SITE_DIR="${WEB_ROOT}/${DOMAIN}"
-ENV_FILE="${SITE_DIR}/.env"
+SITE_DIR="$(site_deploy_root)"
+ENV_FILE="$(site_env_file "$SITE_DIR")"
+LIVE_DIR="$(site_live_path "$SITE_DIR")"
 
 cmd_push() {
     [[ -f "$ENV_FILE" ]] || fail "missing ${ENV_FILE} — run provision/site first"
@@ -84,21 +89,18 @@ cmd_push() {
         fail "aborted"
     fi
 
-    local key
-    for key in $(client_env_sorted_keys DESIRED); do
-        set_env_var "$key" "${DESIRED[$key]}" "$ENV_FILE"
-    done
+    client_env_apply_to_file "$ENV_FILE" DESIRED
 
     ok "updated ${change_count} key(s) in .env"
 
-    if [[ -f "${SITE_DIR}/artisan" ]]; then
+    if [[ -f "${LIVE_DIR}/artisan" ]]; then
         ok "refreshing Laravel config cache"
-        (cd "$SITE_DIR" && php artisan config:clear --no-ansi -q && php artisan config:cache --no-ansi -q)
+        (cd "$LIVE_DIR" && php artisan config:clear --no-ansi -q && php artisan config:cache --no-ansi -q)
     fi
 
     echo
     echo "Next:"
-    echo "  cd ${SITE_DIR}"
+    echo "  cd ${LIVE_DIR}"
     echo "  ./bin/check"
 }
 
@@ -115,7 +117,7 @@ cmd_check() {
     local key value
     for key in $(client_env_sorted_keys DESIRED); do
         value="$(load_env_var "$key" "$ENV_FILE")"
-        [[ -n "$value" ]] || fail "${key} is not set in .env (run: ./bin/remote env CLIENT push)"
+        [[ -n "$value" ]] || fail "${key} is not set in .env (run: ./bin/remote env push)"
         ok "${key}"
     done
 

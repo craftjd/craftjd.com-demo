@@ -9,212 +9,179 @@ else
 fi
 source "${BIN_ROOT}/lib.sh"
 
-TIER=""
-DOMAIN=""
-REPO=""
-SSL=false
-CERT_EMAIL=""
-DB_NAME=""
-DB_USER=""
-DB_PASS=""
-RUN_DEPLOY=false
-WEB_ROOT="/var/www"
+# Read config from .conf file (default: site.conf, override with a conf path).
+CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
 
-usage() {
-    cat <<'EOF'
-Usage: site --domain=DOMAIN --repo=GIT_URL --tier=flat-file|app [options]
-
-Per-client site setup. Run as deploy (sudo required for nginx/Certbot).
-
-Options:
-  --ssl                 Request Let's Encrypt certificate (DNS must point here)
-  --cert-email=EMAIL    Required with --ssl (Let's Encrypt account email)
-  --db-name=NAME        App tier: MySQL database name
-  --db-user=USER        App tier: MySQL user
-  --db-pass=PASS        App tier: MySQL password
-  --deploy              Run ./bin/deploy after setup (run env push first)
-
-From laptop:
-  ./bin/remote site CLIENT_NAME
-EOF
-}
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --tier=*) TIER="${1#*=}" ;;
-        --tier) TIER="${2:?}"; shift ;;
-        --domain=*) DOMAIN="${1#*=}" ;;
-        --domain) DOMAIN="${2:?}"; shift ;;
-        --repo=*) REPO="${1#*=}" ;;
-        --repo) REPO="${2:?}"; shift ;;
-        --cert-email=*) CERT_EMAIL="${1#*=}" ;;
-        --cert-email) CERT_EMAIL="${2:?}"; shift ;;
-        --db-name=*) DB_NAME="${1#*=}" ;;
-        --db-name) DB_NAME="${2:?}"; shift ;;
-        --db-user=*) DB_USER="${1#*=}" ;;
-        --db-user) DB_USER="${2:?}"; shift ;;
-        --db-pass=*) DB_PASS="${1#*=}" ;;
-        --db-pass) DB_PASS="${2:?}"; shift ;;
-        --ssl) SSL=true ;;
-        --deploy) RUN_DEPLOY=true ;;
-        -h | --help) usage; exit 0 ;;
-        *) fail "unknown argument: $1 (try --help)" ;;
-    esac
-    shift
-done
-
-[[ -n "$TIER" && -n "$DOMAIN" && -n "$REPO" ]] || { usage; exit 1; }
-validate_tier "$TIER"
-
-if [[ "$DOMAIN" =~ [^a-zA-Z0-9._-] ]]; then
-    fail "invalid domain: ${DOMAIN}"
-fi
-
-if [[ "$SSL" == true && -z "$CERT_EMAIL" ]]; then
-    fail "--cert-email is required with --ssl"
-fi
-
-if [[ "$TIER" == "app" ]]; then
-    if [[ -n "$DB_NAME" || -n "$DB_USER" || -n "$DB_PASS" ]]; then
-        [[ -n "$DB_NAME" && -n "$DB_USER" && -n "$DB_PASS" ]] || fail "app tier requires all of --db-name, --db-user, --db-pass"
-    fi
-fi
+[[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
+# shellcheck disable=SC1090
+source "$CONF_FILE"
+shift 2>/dev/null || true
 
 require_sudo
 
-SITE_DIR="${WEB_ROOT}/${DOMAIN}"
+[[ -n "${DOMAIN:-}" && -n "${REPO:-}" && -n "${TIER:-}" ]] || fail "config must set DOMAIN, REPO, and TIER"
+validate_tier "${TIER}"
 
-echo "==> provision site (tier=${TIER}, domain=${DOMAIN})"
+if [[ "${SSL:-false}" == true && -z "${CERT_EMAIL:-}" ]]; then
+    fail "config: CERT_EMAIL is required when SSL=true"
+fi
+
+if [[ "$TIER" == "app" ]]; then
+    if [[ -n "${DB_NAME:-}" || -n "${DB_USER:-}" || -n "${DB_PASS:-}" ]]; then
+        [[ -n "${DB_NAME:-}" && -n "${DB_USER:-}" && -n "${DB_PASS:-}" ]] \
+            || fail "app tier requires all of DB_NAME, DB_USER, DB_PASS in config"
+    fi
+fi
+
+SITE_DIR="$(site_deploy_root)"
+RELEASE_DIR="${SITE_DIR}/releases/1"
+SHARED_ENV="$(site_env_file "$SITE_DIR")"
+DOCUMENT_ROOT="${SITE_DIR}/current/public"
 
 if [[ -d "$SITE_DIR" ]]; then
-    fail "${SITE_DIR} already exists"
+    UPDATE_MODE=true
+    echo "==> re-provision site (tier=${TIER}, domain=${DOMAIN}, config=${CONF_FILE})"
+    ok "${SITE_DIR} exists — running in update mode (nginx, certbot, permissions, .env)"
+else
+    UPDATE_MODE=false
+    echo "==> provision site (tier=${TIER}, domain=${DOMAIN}, config=${CONF_FILE})"
 fi
 
 if [[ ! -d "$WEB_ROOT" ]]; then
     fail "${WEB_ROOT} missing — run provision server first"
 fi
 
-CLONE_URL="$(github_repo_clone_url "$REPO")"
-require_github_repo_access "$REPO"
+# ─────────────────────────────────────────────────────────────────────────────
+#  First-time setup: directory structure, clone, seed, build
+# ─────────────────────────────────────────────────────────────────────────────
+if [[ "$UPDATE_MODE" == false ]]; then
+    mkdir -p "${SITE_DIR}/releases" "${SITE_DIR}/shared" "${SITE_DIR}/.dep" "${SITE_DIR}/shared/database"
 
-ok "cloning ${CLONE_URL}"
-if ! git clone "$CLONE_URL" "$SITE_DIR"; then
-    fail "git clone failed — see MAINTENANCE.md → Private GitHub repos"
+    CLONE_URL="$(github_repo_clone_url "$REPO")"
+    require_github_repo_access "$REPO"
+
+    ok "cloning ${CLONE_URL} → releases/1"
+    if ! git clone "$CLONE_URL" "$RELEASE_DIR"; then
+        fail "git clone failed — see MAINTENANCE.md -> Private GitHub repos"
+    fi
+    cd "$RELEASE_DIR"
+
+    ENV_TEMPLATE=".env.flat-file.example"
+    if [[ "$TIER" == "app" ]]; then
+        ENV_TEMPLATE=".env.app.example"
+    fi
+
+    [[ -f "$ENV_TEMPLATE" ]] || fail "missing ${ENV_TEMPLATE} in repo"
+    cp "$ENV_TEMPLATE" "$SHARED_ENV"
+
+    APP_URL="https://${DOMAIN}"
+    if [[ "${SSL:-false}" != true ]]; then
+        APP_URL="http://${DOMAIN}"
+    fi
+
+    MONITOR_KEY="$(php -r 'echo bin2hex(random_bytes(16));')"
+
+    set_env_var APP_URL "$APP_URL" "$SHARED_ENV"
+    set_env_var MONITOR_KEY "$MONITOR_KEY" "$SHARED_ENV"
+
+    ok "syncing shared/.env from client config"
+    declare -A DESIRED=()
+    client_env_collect_desired DESIRED
+    client_env_apply_to_file "$SHARED_ENV" DESIRED
+
+    ln -sfn ../../shared/.env .env
+
+    ok "composer install"
+    composer install --no-dev --optimize-autoloader --no-interaction
+
+    if [[ "$TIER" == "app" && -n "${DB_NAME:-}" ]]; then
+        ok "creating MySQL database ${DB_NAME}"
+        sudo_cmd mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+        sudo_cmd mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+        sudo_cmd mysql -e "GRANT ALL ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
+        sudo_cmd mysql -e "FLUSH PRIVILEGES;"
+        set_env_var DB_DATABASE "$DB_NAME" "$SHARED_ENV"
+        set_env_var DB_USERNAME "$DB_USER" "$SHARED_ENV"
+        set_env_var DB_PASSWORD "$DB_PASS" "$SHARED_ENV"
+    fi
+
+    if [[ "$TIER" == "flat-file" ]]; then
+        ok "creating SQLite database (shared)"
+        touch "${SITE_DIR}/shared/database/database.sqlite"
+        mkdir -p database
+        ln -sfn ../../shared/database/database.sqlite database/database.sqlite
+    fi
+
+    ok "generating APP_KEY"
+    php artisan key:generate --force
+
+    deployer_adopt_release "$SITE_DIR" "$RELEASE_DIR" "$TIER"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Update mode: ensure shared dirs exist, no destructive steps
+# ─────────────────────────────────────────────────────────────────────────────
+else
+    # Ensure Deployer layout directories exist
+    mkdir -p "${SITE_DIR}/releases" "${SITE_DIR}/shared" "${SITE_DIR}/.dep" "${SITE_DIR}/shared/database"
+    if [[ -f "${SITE_DIR}/shared/storage/app/deploy-meta.json" ]]; then
+        ok "site appears active (current → $(readlink "${SITE_DIR}/current"))"
+    fi
+
+    # Re-sync shared/.env from client config (preserving APP_KEY and MONITOR_KEY)
+    if [[ -f "$SHARED_ENV" ]]; then
+        APP_KEY="$(load_env_var APP_KEY "$SHARED_ENV")"
+        MONITOR_KEY="$(load_env_var MONITOR_KEY "$SHARED_ENV")"
+    fi
+    declare -A DESIRED=()
+    client_env_collect_desired DESIRED
+    client_env_apply_to_file "$SHARED_ENV" DESIRED
+    # Re-apply keys that provision/site generates (not in client config)
+    [[ -n "${APP_KEY:-}" ]] && set_env_var APP_KEY "$APP_KEY" "$SHARED_ENV"
+    [[ -n "${MONITOR_KEY:-}" ]] && set_env_var MONITOR_KEY "$MONITOR_KEY" "$SHARED_ENV"
+
+    # Ensure SQLite database exists
+    if [[ "$TIER" == "flat-file" && ! -f "${SITE_DIR}/shared/database/database.sqlite" ]]; then
+        ok "creating missing SQLite database"
+        touch "${SITE_DIR}/shared/database/database.sqlite"
+    fi
 fi
-cd "$SITE_DIR"
 
-ENV_TEMPLATE=".env.flat-file.example"
-if [[ "$TIER" == "app" ]]; then
-    ENV_TEMPLATE=".env.app.example"
+# ─────────────────────────────────────────────────────────────────────────────
+#  Idempotent: always run (safe during live serving)
+# ─────────────────────────────────────────────────────────────────────────────
+deployer_fix_permissions "$SITE_DIR"
+
+if [[ -f "/etc/nginx/sites-available/${DOMAIN}" ]]; then
+    nginx_update_document_root "$DOMAIN" "$SITE_DIR"
+else
+    nginx_write_site_config "$DOMAIN" "$DOCUMENT_ROOT"
 fi
 
-[[ -f "$ENV_TEMPLATE" ]] || fail "missing ${ENV_TEMPLATE} in repo"
-cp "$ENV_TEMPLATE" .env
+if [[ "${SSL:-false}" == true ]]; then
+    certbot_args=()
+    while read -r name; do
+        [[ -n "$name" ]] && certbot_args+=(-d "$name")
+    done < <(site_certbot_domains "$DOMAIN" | tr ' ' '\n')
 
-APP_URL="https://${DOMAIN}"
-if [[ "$SSL" != true ]]; then
-    APP_URL="http://${DOMAIN}"
-fi
-
-MONITOR_KEY="$(php -r 'echo bin2hex(random_bytes(16));')"
-
-set_env_var APP_URL "$APP_URL" .env
-set_env_var MONITOR_KEY "$MONITOR_KEY" .env
-
-ok "composer install"
-composer install --no-dev --optimize-autoloader --no-interaction
-
-if [[ "$TIER" == "app" && -n "$DB_NAME" ]]; then
-    ok "creating MySQL database ${DB_NAME}"
-    sudo_cmd mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    sudo_cmd mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-    sudo_cmd mysql -e "GRANT ALL ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
-    sudo_cmd mysql -e "FLUSH PRIVILEGES;"
-    set_env_var DB_DATABASE "$DB_NAME" .env
-    set_env_var DB_USERNAME "$DB_USER" .env
-    set_env_var DB_PASSWORD "$DB_PASS" .env
-fi
-
-if [[ "$TIER" == "flat-file" ]]; then
-    ok "creating SQLite database"
-    touch database/database.sqlite
-fi
-
-ok "generating APP_KEY"
-php artisan key:generate --force
-
-ok "setting permissions"
-sudo_cmd chown -R "$(whoami):www-data" storage bootstrap/cache database
-sudo_cmd chmod -R g+w storage bootstrap/cache database
-
-NGINX_SITE="/etc/nginx/sites-available/${DOMAIN}"
-
-ok "writing nginx config"
-sudo_cmd tee "$NGINX_SITE" >/dev/null <<EOF
-server {
-    listen 80;
-    server_name ${DOMAIN} www.${DOMAIN};
-    root ${SITE_DIR}/public;
-
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-Content-Type-Options "nosniff";
-
-    index index.php;
-    charset utf-8;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-    }
-
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-
-    error_page 404 /index.php;
-
-    location ~ \.php\$ {
-        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
-        include fastcgi_params;
-        fastcgi_hide_header X-Powered-By;
-    }
-
-    location ~ /\.(?!well-known).* {
-        deny all;
-    }
-}
-EOF
-
-sudo_cmd ln -sf "$NGINX_SITE" "/etc/nginx/sites-enabled/${DOMAIN}"
-sudo_cmd nginx -t
-sudo_cmd systemctl reload nginx
-
-if [[ "$SSL" == true ]]; then
-    ok "requesting TLS certificate (${DOMAIN} + www.${DOMAIN})"
+    TLS_LABEL="$(site_certbot_domains "$DOMAIN")"
+    ok "requesting TLS certificate (${TLS_LABEL})"
     sudo_cmd certbot --nginx \
-        -d "$DOMAIN" -d "www.${DOMAIN}" \
+        "${certbot_args[@]}" \
         --non-interactive --agree-tos -m "$CERT_EMAIL" \
         --redirect
-    set_env_var APP_URL "https://${DOMAIN}" .env
+    nginx_update_document_root "$DOMAIN" "$SITE_DIR"
 fi
 
 echo
-echo "Site scaffolded at ${SITE_DIR}"
-echo "MONITOR_KEY=${MONITOR_KEY}"
-echo
-echo "Set site and mail settings in your client config, then:"
-echo "  ./bin/remote env CLIENT_NAME push"
-if [[ "$TIER" == "app" && -z "$DB_NAME" ]]; then
-    echo "  DB_DATABASE, DB_USERNAME, DB_PASSWORD (create MySQL database first)"
-fi
-echo
-echo "Then:"
-echo "  cd ${SITE_DIR}"
-echo "  ./bin/deploy"
-echo "  sudo systemctl reload php8.3-fpm"
-echo "  ./bin/check"
-
-if [[ "$RUN_DEPLOY" == true ]]; then
-    warn "running deploy (ensure env push has been run)"
-    ./bin/deploy
-    sudo_cmd systemctl reload php8.3-fpm
+if [[ "$UPDATE_MODE" == true ]]; then
+    echo "Site re-provisioned (${SITE_DIR})"
+    echo "  nginx config, certbot, permissions, .env, and shared dirs refreshed."
+    echo "  Current release was not modified — run task deploy to publish code changes."
+else
+    echo "Site scaffolded at ${SITE_DIR} (Deployer layout)"
+    echo "MONITOR_KEY=${MONITOR_KEY}"
+    echo
+    echo "Next:"
+    echo "  ./bin/remote env check   # verify shared/.env matches client config"
+    echo "  task deploy              # first atomic deploy"
 fi
