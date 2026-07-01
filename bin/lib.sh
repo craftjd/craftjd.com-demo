@@ -87,7 +87,8 @@ load_env_var() {
     local file="${2:-.env}"
 
     if [[ -f "$file" ]]; then
-        grep -E "^${key}=" "$file" | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'"
+        # grep exit 1 when key is missing — must not abort callers under set -o pipefail.
+        grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true
     fi
 }
 
@@ -167,17 +168,23 @@ set_env_var() {
     local key="$1"
     local value="$2"
     local file="${3:-.env}"
-    local line="${key}=${value}"
+    local line tmp
 
     if [[ "$value" =~ [^a-zA-Z0-9._/@-] ]]; then
         line="${key}=\"${value//\"/\\\"}\""
+    else
+        line="${key}=${value}"
     fi
 
-    if grep -qE "^${key}=" "$file"; then
-        sed -i "s|^${key}=.*|${line}|" "$file"
+    # Replace via grep -v + append — sed breaks on &, \, |, etc. in values.
+    tmp="$(mktemp)"
+    if [[ -f "$file" ]]; then
+        grep -vE "^${key}=" "$file" >"$tmp" || true
     else
-        echo "$line" >>"$file"
+        : >"$tmp"
     fi
+    echo "$line" >>"$tmp"
+    mv "$tmp" "$file"
 }
 
 validate_tier() {
@@ -448,7 +455,7 @@ require_github_repo_access() {
 
 client_env_is_secret() {
     case "$1" in
-        APP_KEY | MONITOR_KEY | MAIL_PASSWORD | MAIL_USERNAME | DB_PASSWORD) return 0 ;;
+        APP_KEY | MONITOR_KEY | MAIL_PASSWORD | MAIL_USERNAME | DB_PASSWORD | JOES_WEBHOOK_SECRET) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -475,12 +482,14 @@ client_env_add_if_set() {
     local key="$2"
     local value="${3:-}"
 
-    [[ -n "$value" ]] && _desired["$key"]="$value"
+    if [[ -n "$value" ]]; then
+        _desired["$key"]="$value"
+    fi
 }
 
 client_env_collect_desired() {
     local -n _desired="$1"
-    local app_url db_name db_user db_pass mail_from
+    local app_url db_name db_user db_pass mail_from main_site_url
 
     if [[ -n "${DOMAIN:-}" ]]; then
         app_url="http://${DOMAIN}"
@@ -494,6 +503,19 @@ client_env_collect_desired() {
     client_env_add_if_set _desired SITE_DESCRIPTION "${SITE_DESCRIPTION:-}"
     client_env_add_if_set _desired CONTACT_EMAIL "${CONTACT_EMAIL:-}"
     client_env_add_if_set _desired GA_MEASUREMENT_ID "${GA_MEASUREMENT_ID:-}"
+
+    if [[ -n "${MAIN_SITE_WEBHOOK_URL:-}" ]]; then
+        client_env_add_if_set _desired MAIN_SITE_WEBHOOK_URL "${MAIN_SITE_WEBHOOK_URL}"
+    elif [[ -n "${MAIN_SITE_DOMAIN:-}" ]]; then
+        main_site_url="http://${MAIN_SITE_DOMAIN}"
+        if [[ "${MAIN_SITE_SSL:-true}" == true ]]; then
+            main_site_url="https://${MAIN_SITE_DOMAIN}"
+        fi
+        _desired[MAIN_SITE_WEBHOOK_URL]="${main_site_url}/api/joes/requests"
+    fi
+
+    client_env_add_if_set _desired JOES_WEBHOOK_SECRET "${JOES_WEBHOOK_SECRET:-}"
+    client_env_add_if_set _desired JOES_LOCAL_DEPLOY_BYPASS_GIT "${JOES_LOCAL_DEPLOY_BYPASS_GIT:-}"
 
     client_env_add_if_set _desired MAIL_MAILER "${MAIL_MAILER:-}"
     client_env_add_if_set _desired MAIL_HOST "${MAIL_HOST:-}"
@@ -596,5 +618,240 @@ client_env_validate_mail_domain() {
     from_domain="${from##*@}"
     if [[ "$from_domain" != "$domain" && "$from_domain" != *".${domain}" ]]; then
         warn "MAIL_FROM_ADDRESS (${from}) is not on ${domain}"
+    fi
+}
+
+# Apply client config values into a site .env (used by provision/site and env push).
+client_env_apply_to_file() {
+    local env_file="$1"
+    local -n _desired="$2"
+    local key
+
+    for key in $(client_env_sorted_keys "$2"); do
+        set_env_var "$key" "${_desired[$key]}" "$env_file"
+    done
+}
+
+# --- Deployer layout (/var/www/DOMAIN/{current,releases,shared,.dep}) ---
+
+WEB_ROOT="${WEB_ROOT:-/var/www}"
+
+site_deploy_root() {
+    [[ -n "${DOMAIN:-}" ]] || fail "DOMAIN is not set"
+    echo "${WEB_ROOT}/${DOMAIN}"
+}
+
+# Path to the live .env (shared/.env once Deployer layout is active).
+site_env_file() {
+    local root="${1:-$(site_deploy_root)}"
+
+    if [[ -f "${root}/shared/.env" ]]; then
+        echo "${root}/shared/.env"
+    elif [[ -f "${root}/.env" ]]; then
+        echo "${root}/.env"
+    else
+        echo "${root}/shared/.env"
+    fi
+}
+
+site_live_path() {
+    local root="${1:-$(site_deploy_root)}"
+
+    if [[ -L "${root}/current" ]]; then
+        echo "${root}/current"
+    elif [[ -f "${root}/artisan" ]]; then
+        echo "${root}"
+    elif [[ -f "${root}/current/artisan" ]]; then
+        echo "${root}/current"
+    else
+        echo "${root}/current"
+    fi
+}
+
+deployer_layout_active() {
+    local root="${1:-$(site_deploy_root)}"
+    [[ -L "${root}/current" ]]
+}
+
+site_nginx_server_names() {
+    local domain="$1"
+    local dot_count="${domain//[^.]}"
+
+    if ((${#dot_count} >= 2)); then
+        echo "$domain"
+    else
+        echo "$domain www.${domain}"
+    fi
+}
+
+site_certbot_domains() {
+    local domain="$1"
+    local dot_count="${domain//[^.]}"
+
+    if ((${#dot_count} >= 2)); then
+        echo "$domain"
+    else
+        echo "$domain www.${domain}"
+    fi
+}
+
+# Symlink shared .env, storage, and SQLite into a release directory.
+deployer_adopt_release() {
+    local root="$1"
+    local release_dir="$2"
+    local tier="${3:-flat-file}"
+    local shared="${root}/shared"
+
+    mkdir -p "${root}/releases" "${root}/.dep" "${shared}/database"
+
+    if [[ -f "${release_dir}/.env" && ! -L "${release_dir}/.env" ]]; then
+        if [[ ! -f "${shared}/.env" ]]; then
+            cp -a "${release_dir}/.env" "${shared}/.env"
+        fi
+        rm -f "${release_dir}/.env"
+    fi
+    ln -sfn ../../shared/.env "${release_dir}/.env"
+
+    if [[ -d "${release_dir}/storage" && ! -L "${release_dir}/storage" ]]; then
+        if [[ ! -d "${shared}/storage" ]]; then
+            cp -a "${release_dir}/storage" "${shared}/"
+        fi
+        rm -rf "${release_dir}/storage"
+    fi
+    ln -sfn ../../shared/storage "${release_dir}/storage"
+
+    if [[ "$tier" == "flat-file" ]]; then
+        if [[ -f "${release_dir}/database/database.sqlite" && ! -L "${release_dir}/database/database.sqlite" ]]; then
+            if [[ ! -f "${shared}/database/database.sqlite" ]]; then
+                mv "${release_dir}/database/database.sqlite" "${shared}/database/database.sqlite"
+            fi
+        fi
+        [[ -f "${shared}/database/database.sqlite" ]] || touch "${shared}/database/database.sqlite"
+        mkdir -p "${release_dir}/database"
+        rm -f "${release_dir}/database/database.sqlite"
+        ln -sfn ../../shared/database/database.sqlite "${release_dir}/database/database.sqlite"
+    fi
+
+    ln -sfn "releases/$(basename "${release_dir}")" "${root}/current"
+}
+
+# Move a flat clone at $root into releases/1 + shared/ + current symlink.
+deployer_migrate_flat_layout() {
+    local root="${1:-$(site_deploy_root)}"
+    local tier="${2:-${TIER:-flat-file}}"
+    local release_dir="${root}/releases/1"
+    local item base
+
+    if deployer_layout_active "$root"; then
+        ok "Deployer layout already active (${root}/current)"
+        return 0
+    fi
+
+    rm -f "${root}/.dep/deploy.lock" 2>/dev/null || true
+
+    mkdir -p "${root}/releases" "${root}/shared" "${root}/.dep"
+
+    if [[ -d "$release_dir" && ! -f "${release_dir}/artisan" ]]; then
+        rm -rf "$release_dir"
+    fi
+
+    if [[ -f "${root}/artisan" ]]; then
+        ok "moving flat site into releases/1"
+        mkdir -p "$release_dir"
+        shopt -s dotglob nullglob
+        for item in "${root}"/*; do
+            base="$(basename "$item")"
+            case "$base" in
+                releases | shared | .dep | current) ;;
+                *) mv "$item" "${release_dir}/" ;;
+            esac
+        done
+        shopt -u dotglob nullglob
+    elif [[ ! -f "${release_dir}/artisan" ]]; then
+        fail "no Laravel app at ${root} or ${release_dir} — run provision/site first"
+    fi
+
+    deployer_adopt_release "$root" "$release_dir" "$tier"
+    ok "Deployer layout ready (current → releases/1)"
+}
+
+nginx_write_site_config() {
+    local domain="$1"
+    local document_root="$2"
+    local nginx_site="/etc/nginx/sites-available/${domain}"
+    local server_names
+    server_names="$(site_nginx_server_names "$domain")"
+
+    ok "writing nginx config (${document_root})"
+    sudo_cmd tee "$nginx_site" >/dev/null <<EOF
+server {
+    listen 80;
+    server_name ${server_names};
+    root ${document_root};
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    index index.php;
+    charset utf-8;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php\$ {
+        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_hide_header X-Powered-By;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+EOF
+
+    sudo_cmd ln -sf "$nginx_site" "/etc/nginx/sites-enabled/${domain}"
+    sudo_cmd nginx -t
+    sudo_cmd systemctl reload nginx
+}
+
+# Point nginx at …/current/public (safe when Certbot already added SSL blocks).
+nginx_update_document_root() {
+    local domain="$1"
+    local site_dir="$2"
+    local nginx_site="/etc/nginx/sites-available/${domain}"
+    local flat_root="${site_dir}/public"
+    local deploy_root="${site_dir}/current/public"
+
+    [[ -f "$nginx_site" ]] || fail "missing nginx config ${nginx_site}"
+
+    if grep -q "root ${deploy_root};" "$nginx_site"; then
+        ok "nginx already uses ${deploy_root}"
+        return 0
+    fi
+
+    ok "updating nginx document root → ${deploy_root}"
+    sudo_cmd sed -i "s|root ${flat_root};|root ${deploy_root};|g" "$nginx_site"
+    sudo_cmd nginx -t
+    sudo_cmd systemctl reload nginx
+}
+
+deployer_fix_permissions() {
+    local root="${1:-$(site_deploy_root)}"
+    local user
+    user="$(whoami)"
+
+    sudo_cmd chown -R "${user}:www-data" "${root}/shared" 2>/dev/null || true
+    sudo_cmd chmod -R g+w "${root}/shared/storage" "${root}/shared/database" 2>/dev/null || true
+    if [[ -d "${root}/current/storage" ]]; then
+        sudo_cmd chown -R "${user}:www-data" "${root}/current/storage" "${root}/current/bootstrap/cache" 2>/dev/null || true
+        sudo_cmd chmod -R g+w "${root}/current/storage" "${root}/current/bootstrap/cache" 2>/dev/null || true
     fi
 }
