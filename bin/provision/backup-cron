@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+    BIN_ROOT="${SCRIPT_DIR}"
+fi
+source "${BIN_ROOT}/lib.sh"
+
+CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
+
+[[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
+# shellcheck disable=SC1090
+source "$CONF_FILE"
+shift 2>/dev/null || true
+
+[[ -n "${DOMAIN:-}" ]] || fail "config must set DOMAIN"
+[[ -n "${TIER:-}" ]] || fail "config must set TIER"
+validate_tier "$TIER"
+
+echo "==> install backup cron (domain=${DOMAIN})"
+
+TEMP_CRON="$(mktemp)"
+crontab -l 2>/dev/null >"$TEMP_CRON" || true
+
+# Remove any existing backup cron for this domain (avoids duplicates on re-run)
+sed -i "/bin\/backup create.*${DOMAIN//\//\\/}/d" "$TEMP_CRON" 2>/dev/null || true
+
+# Daily at 2:00 AM — backup script reads site.conf for paths and retention
+BACKUP_CMD="cd ~ && bash backup create ~/${CONF_FILE##*/} >/dev/null 2>&1"
+echo "0 2 * * * ${BACKUP_CMD}" >>"$TEMP_CRON"
+
+crontab "$TEMP_CRON"
+rm -f "$TEMP_CRON"
+
+ok "cron installed: daily backup at 2:00 AM (system localtime)"
+
+# Sanity — we need the scripts on the server for the cron to run.
+# The cron expects ~/backup and ~/lib.sh to already exist from a prior
+# `./bin/remote backup create` or `provision/site` run.
+if [[ ! -f "${HOME}/backup" ]]; then
+    warn "~/backup not found on server yet"
+    echo "       Run ./bin/remote backup ${CONF_FILE##*/} create once to copy the script."
+    echo "       The cron will use that copy from then on."
+fi
+
+echo
+echo "Crontab entry (deploy user):"
+crontab -l

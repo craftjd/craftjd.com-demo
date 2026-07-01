@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+else
+    BIN_ROOT="${SCRIPT_DIR}"
+fi
+source "${BIN_ROOT}/lib.sh"
+
+CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
+
+[[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
+# shellcheck disable=SC1090
+source "$CONF_FILE"
+shift 2>/dev/null || true
+
+require_sudo
+
+[[ -n "${DOMAIN:-}" && -n "${TIER:-}" ]] || fail "config must set DOMAIN and TIER"
+validate_tier "${TIER}"
+
+SITE_DIR="$(site_deploy_root)"
+RELEASE_DIR="${SITE_DIR}/releases/1"
+SHARED_ENV="$(site_env_file "$SITE_DIR")"
+DOCUMENT_ROOT="${SITE_DIR}/current/public"
+
+echo "==> migrate Deployer layout (domain=${DOMAIN}, tier=${TIER})"
+
+if [[ ! -d "$SITE_DIR" ]]; then
+    fail "${SITE_DIR} does not exist — run provision/site first"
+fi
+
+deployer_migrate_flat_layout "$SITE_DIR" "$TIER"
+deployer_fix_permissions "$SITE_DIR"
+
+if [[ -f "/etc/nginx/sites-available/${DOMAIN}" ]]; then
+    nginx_update_document_root "$DOMAIN" "$SITE_DIR"
+else
+    nginx_write_site_config "$DOMAIN" "$DOCUMENT_ROOT"
+fi
+
+echo
+echo "Deployer layout ready at ${SITE_DIR}"
+echo "  .env       → shared/.env"
+echo "  live code  → current/ (symlink to releases/*)"
+echo "  nginx root → ${DOCUMENT_ROOT}"
+echo
+echo "Next (from your laptop):"
+echo "  task deploy              # CLIENT matches conf basename, e.g. demo"
+echo "  task deploy:unlock       # if a previous deploy left a lock"

@@ -1,0 +1,425 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/lib.sh" ]]; then
+    BIN_ROOT="$(cd "${SCRIPT_DIR}" && pwd)"
+else
+    BIN_ROOT="${SCRIPT_DIR}"
+fi
+source "${BIN_ROOT}/lib.sh"
+
+# --- Subcommand dispatch ---
+CMD="${1:-}"
+[[ -n "$CMD" ]] || {
+    echo "Usage: backup create|list|restore CONF_FILE [BACKUP_ID]" >&2
+    exit 1
+}
+case "$CMD" in
+    create | list | restore) shift ;;
+    -h | --help) echo "Usage: backup create|list|restore CONF_FILE [BACKUP_ID]" >&2; exit 0 ;;
+    *) fail "unknown command: ${CMD} (use create, list, or restore)" ;;
+esac
+
+CONF_FILE="${1:-}"
+[[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
+# shellcheck disable=SC1090
+source "$CONF_FILE"
+shift 2>/dev/null || true
+
+[[ -n "${DOMAIN:-}" ]] || fail "config must set DOMAIN"
+validate_tier "${TIER:-flat-file}"
+
+DEPS=(tar gzip)
+if [[ "$TIER" == "flat-file" ]]; then
+    DEPS+=(sqlite3)
+else
+    DEPS+=(mysqldump)
+fi
+for dep in "${DEPS[@]}"; do
+    require_command "$dep"
+done
+
+SITE_DIR="${WEB_ROOT:-/var/www}/${DOMAIN}"
+BACKUP_DIR="${SITE_DIR}/backups"
+BACKUP_PREFIX="${DOMAIN}"
+
+# Retention: BACKUP_KEEP_DAYS overrides simple mode.
+# GFS mode: BACKUP_KEEP_DAILY / BACKUP_KEEP_WEEKLY / BACKUP_KEEP_MONTHLY.
+KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
+KEEP_DAILY="${BACKUP_KEEP_DAILY:-7}"
+KEEP_WEEKLY="${BACKUP_KEEP_WEEKLY:-4}"
+KEEP_MONTHLY="${BACKUP_KEEP_MONTHLY:-12}"
+
+GFS_MODE=false
+if [[ -n "${BACKUP_KEEP_DAILY:-}" || -n "${BACKUP_KEEP_WEEKLY:-}" || -n "${BACKUP_KEEP_MONTHLY:-}" ]]; then
+    GFS_MODE=true
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Backup contents
+# ─────────────────────────────────────────────────────────────────────────────
+#   .env
+#   database.sqlite  (flat-file)  or  mysql-dump.sql  (app)
+#   storage/public/             ← storage/app/public (user uploads)
+#   storage/private/            ← storage/app/private (non-public user assets)
+#   storage/logs/               ← deploy output, contact form submissions, etc.
+
+backup_create() {
+    local timestamp
+    timestamp="$(date -u +%Y%m%d_%H%M%S)"
+    local backup_name="${BACKUP_PREFIX}-${timestamp}"
+    local archive="${BACKUP_DIR}/${backup_name}.tar.gz"
+    local workdir
+    workdir="$(mktemp -d)"
+    local shared_root="${SITE_DIR}/shared"
+    local rc=0
+
+    echo "==> backup create (${backup_name})"
+
+    mkdir -p "$BACKUP_DIR" "$workdir"
+
+    # --- .env ---
+    if [[ -f "${shared_root}/.env" ]]; then
+        ok "capturing .env"
+        cp -a "${shared_root}/.env" "${workdir}/.env"
+    else
+        warn ".env not found in shared/ — skipping"
+    fi
+
+    # --- Database ---
+    if [[ "$TIER" == "flat-file" ]]; then
+        local db_src="${shared_root}/database/database.sqlite"
+        if [[ -f "$db_src" ]]; then
+            ok "capturing SQLite snapshot"
+            sqlite3 "$db_src" ".backup '${workdir}/database.sqlite'" || {
+                warn "SQLite backup failed — DB may be locked; skipping"
+                rc=1
+            }
+        else
+            warn "database.sqlite not found — skipping"
+        fi
+    else
+        ok "capturing MySQL dump"
+        DB_DATABASE="${DB_DATABASE:-${DB_NAME:-}}"
+        DB_USERNAME="${DB_USERNAME:-${DB_USER:-}}"
+        DB_PASSWORD="${DB_PASSWORD:-${DB_PASS:-}}"
+        if [[ -n "$DB_DATABASE" && -n "$DB_USERNAME" ]]; then
+            mysqldump \
+                --single-transaction --quick \
+                -u "$DB_USERNAME" \
+                "${DB_PASSWORD:+-p${DB_PASSWORD}}" \
+                "$DB_DATABASE" > "${workdir}/mysql-dump.sql" || {
+                warn "MySQL dump failed — skipping"
+                rc=1
+            }
+        else
+            warn "DB credentials not in config — skipping database backup"
+        fi
+    fi
+
+    # --- User uploads & content (storage/app/public + storage/app/private) ---
+    local storage_base="${shared_root}/storage/app"
+    if [[ -d "${storage_base}/public" ]]; then
+        ok "capturing storage/public"
+        mkdir -p "${workdir}/storage"
+        cp -a "${storage_base}/public" "${workdir}/storage/public"
+    else
+        warn "storage/app/public not found — creating empty placeholder"
+        mkdir -p "${workdir}/storage/public"
+    fi
+
+    if [[ -d "${storage_base}/private" ]]; then
+        ok "capturing storage/private"
+        mkdir -p "${workdir}/storage"
+        cp -a "${storage_base}/private" "${workdir}/storage/private"
+    else
+        warn "storage/app/private not found — creating empty placeholder"
+        mkdir -p "${workdir}/storage/private"
+    fi
+
+    # --- Logs (useful for forensics, not critical) ---
+    local logs_src="${shared_root}/storage/logs"
+    if [[ -d "$logs_src" ]]; then
+        ok "capturing storage/logs"
+        mkdir -p "${workdir}/storage/logs"
+        cp -a "$logs_src"/* "${workdir}/storage/logs/" 2>/dev/null || true
+    fi
+
+    # --- Archive ---
+    ok "creating archive (${archive})"
+    cd "$workdir"
+    tar czf "$archive" . 2>/dev/null || {
+        rm -rf "$workdir"
+        fail "failed to create backup archive"
+    }
+    cd /tmp
+    rm -rf "$workdir"
+
+    local size
+    size="$(du -h "$archive" | cut -f1)"
+    ok "backup created (${size})"
+
+    # --- Retention ---
+    backup_prune
+
+    echo
+    echo "Backup: ${archive}"
+    echo "Size:   ${size}"
+    return $rc
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  GFS + simple retention pruning
+# ─────────────────────────────────────────────────────────────────────────────
+backup_prune() {
+    local all_backups
+    mapfile -t all_backups < <(ls -1t "${BACKUP_DIR}"/*.tar.gz 2>/dev/null || true)
+    local count="${#all_backups[@]}"
+    local to_delete=()
+    declare -A keep_set
+    local f ts iso_week month
+
+    (( count > 0 )) || return 0
+
+    if [[ "$GFS_MODE" == false ]]; then
+        # Simple: keep backups newer than KEEP_DAYS
+        local cutoff
+        cutoff="$(date -u -d "${KEEP_DAYS} days ago" '+%Y%m%d_%H%M%S')"
+        for f in "${all_backups[@]}"; do
+            local file_ts
+            file_ts="$(basename "$f" | sed 's/^[^-]*-//; s/\.tar\.gz$//')"
+            if [[ "$file_ts" < "$cutoff" ]]; then
+                to_delete+=("$f")
+            fi
+        done
+
+        if [[ ${#to_delete[@]} -gt 0 ]]; then
+            ok "pruning ${#to_delete[@]} backup(s) older than ${KEEP_DAYS} days"
+            for f in "${to_delete[@]}"; do
+                rm -f "$f"
+                warn "  deleted $(basename "$f")"
+            done
+        fi
+        return 0
+    fi
+
+    # --- GFS mode ---
+    # Phase 1: keep the N most recent (daily retention)
+    local i
+    for ((i=0; i<KEEP_DAILY && i<count; i++)); do
+        keep_set["${all_backups[$i]}"]=1
+    done
+
+    # Phase 2: among remaining, keep one per ISO week (weekly retention)
+    declare -A weekly_seen
+    for ((i=0; i<count; i++)); do
+        f="${all_backups[$i]}"
+        [[ -n "${keep_set[$f]-}" ]] && continue
+        ts="$(basename "$f" | sed 's/^[^-]*-//; s/\.tar\.gz$//')"
+        local date_part="${ts:0:8}"
+        local week_key
+        week_key="$(date -u -d "${date_part:0:4}-${date_part:4:2}-${date_part:6:2}" '+%G-W%V' 2>/dev/null)" || continue
+        [[ -n "${weekly_seen[$week_key]-}" ]] && continue
+        weekly_seen[$week_key]=1
+        local weekly_count=0
+        for idx in "${!weekly_seen[@]}"; do weekly_count=$((weekly_count+1)); done
+        (( weekly_count <= KEEP_WEEKLY )) && keep_set["$f"]=1
+    done
+
+    # Phase 3: among remaining, keep one per month (monthly retention)
+    declare -A monthly_seen
+    for ((i=0; i<count; i++)); do
+        f="${all_backups[$i]}"
+        [[ -n "${keep_set[$f]-}" ]] && continue
+        ts="$(basename "$f" | sed 's/^[^-]*-//; s/\.tar\.gz$//')"
+        local date_part="${ts:0:8}"
+        local month_key="${date_part:0:6}"
+        [[ -n "${monthly_seen[$month_key]-}" ]] && continue
+        monthly_seen[$month_key]=1
+        local monthly_count=0
+        for idx in "${!monthly_seen[@]}"; do monthly_count=$((monthly_count+1)); done
+        (( monthly_count <= KEEP_MONTHLY )) && keep_set["$f"]=1
+    done
+
+    # Delete everything not in the keep set
+    for f in "${all_backups[@]}"; do
+        if [[ -z "${keep_set[$f]-}" ]]; then
+            to_delete+=("$f")
+        fi
+    done
+
+    if [[ ${#to_delete[@]} -gt 0 ]]; then
+        ok "GFS prune: ${#to_delete[@]} backup(s)"
+        for f in "${to_delete[@]}"; do
+            rm -f "$f"
+            warn "  deleted $(basename "$f")"
+        done
+    fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  List backups with index, date, size, age
+# ─────────────────────────────────────────────────────────────────────────────
+backup_list() {
+    local all_backups
+    mapfile -t all_backups < <(ls -1tr "${BACKUP_DIR}"/*.tar.gz 2>/dev/null || true)
+    local count="${#all_backups[@]}"
+    local idx
+
+    if (( count == 0 )); then
+        echo "No backups found in ${BACKUP_DIR}"
+        return 0
+    fi
+
+    echo
+    printf '  %-5s %-23s %-10s %s\n' 'ID' 'Date' 'Size' 'Filename'
+    printf '  %-5s %-23s %-10s %s\n' '---' '----' '----' '--------'
+
+    idx=1
+    local f ts date_part time_part size age days_ago
+    for f in "${all_backups[@]}"; do
+        ts="$(basename "$f" | sed 's/^[^-]*-//; s/\.tar\.gz$//')"
+        date_part="${ts:0:4}-${ts:4:2}-${ts:6:2}"
+        time_part="${ts:9:2}:${ts:11:2}:${ts:13:2}"
+        size="$(du -h "$f" | cut -f1)"
+
+        local file_epoch now_epoch diff_days
+        file_epoch="$(date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2} ${ts:9:2}:${ts:11:2}:${ts:13:2}" '+%s' 2>/dev/null || echo 0)"
+        now_epoch="$(date -u '+%s')"
+        diff_days=$(( (now_epoch - file_epoch) / 86400 ))
+        if (( diff_days == 0 )); then
+            age="today"
+        elif (( diff_days == 1 )); then
+            age="1 day"
+        else
+            age="${diff_days} days"
+        fi
+
+        printf '  %-5s %s %s  %-8s %s\n' "$idx)" "$date_part" "$time_part" "$size" "(${age})"
+        idx=$((idx + 1))
+    done
+    echo
+    echo "  ${count} backup(s) in ${BACKUP_DIR}"
+    echo
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Restore from a backup
+# ─────────────────────────────────────────────────────────────────────────────
+backup_restore() {
+    local selection="${1:-}"
+    local all_backups restore_file idx=1
+
+    if [[ -z "$selection" ]]; then
+        backup_list
+        echo
+        read -r -p "Enter backup ID to restore [1-$(ls -1 "${BACKUP_DIR}"/*.tar.gz 2>/dev/null | wc -l)]: " selection
+    fi
+
+    # Map selection (ID) to file
+    mapfile -t all_backups < <(ls -1tr "${BACKUP_DIR}"/*.tar.gz 2>/dev/null || true)
+    if ! [[ "$selection" =~ ^[0-9]+$ ]] || (( selection < 1 || selection > ${#all_backups[@]} )); then
+        fail "invalid backup ID: ${selection} (choose 1-${#all_backups[@]})"
+    fi
+
+    restore_file="${all_backups[$((selection - 1))]}"
+    local restore_name
+    restore_name="$(basename "$restore_file" .tar.gz)"
+    local shared_root="${SITE_DIR}/shared"
+
+    echo
+    echo "==> restore: ${restore_name}"
+    echo "  from: ${restore_file}"
+    echo "  to:   ${SITE_DIR}"
+    echo
+
+    if [[ ! -t 0 ]]; then
+        echo "Non-interactive session — skipping confirmation."
+        echo "Run with ssh -t to confirm interactively."
+    else
+        local reply
+        read -r -p "This will OVERWRITE shared/.env, the database, and user uploads. Continue? [y/N] " reply
+        [[ "$reply" =~ ^[Yy]$ ]] || fail "aborted"
+    fi
+
+    local workdir
+    workdir="$(mktemp -d)"
+    ok "extracting archive"
+    tar xzf "$restore_file" -C "$workdir"
+
+    # --- Stop services ---
+    ok "stopping PHP-FPM and nginx"
+    sudo_cmd systemctl stop php8.3-fpm nginx || true
+
+    # --- Restore .env ---
+    if [[ -f "${workdir}/.env" ]]; then
+        ok "restoring .env"
+        cp -a "${workdir}/.env" "${shared_root}/.env"
+    fi
+
+    # --- Restore database ---
+    if [[ "$TIER" == "flat-file" ]]; then
+        if [[ -f "${workdir}/database.sqlite" ]]; then
+            ok "restoring SQLite database"
+            mkdir -p "${shared_root}/database"
+            cp -a "${workdir}/database.sqlite" "${shared_root}/database/database.sqlite"
+        fi
+    else
+        if [[ -f "${workdir}/mysql-dump.sql" ]]; then
+            ok "restoring MySQL database"
+            DB_DATABASE="${DB_DATABASE:-${DB_NAME:-}}"
+            DB_USERNAME="${DB_USERNAME:-${DB_USER:-}}"
+            DB_PASSWORD="${DB_PASSWORD:-${DB_PASS:-}}"
+            if [[ -n "$DB_DATABASE" && -n "$DB_USERNAME" ]]; then
+                mysql -u "$DB_USERNAME" "${DB_PASSWORD:+-p${DB_PASSWORD}}" "$DB_DATABASE" < "${workdir}/mysql-dump.sql"
+            fi
+        fi
+    fi
+
+    # --- Restore storage ---
+    if [[ -d "${workdir}/storage/public" ]]; then
+        ok "restoring storage/public"
+        mkdir -p "${shared_root}/storage/app"
+        cp -a "${workdir}/storage/public" "${shared_root}/storage/app/public"
+    fi
+    if [[ -d "${workdir}/storage/private" ]]; then
+        ok "restoring storage/private"
+        mkdir -p "${shared_root}/storage/app"
+        cp -a "${workdir}/storage/private" "${shared_root}/storage/app/private"
+    fi
+    if [[ -d "${workdir}/storage/logs" ]]; then
+        ok "restoring storage/logs"
+        mkdir -p "${shared_root}/storage"
+        cp -a "${workdir}/storage/logs" "${shared_root}/storage/logs"
+    fi
+
+    # --- Permissions ---
+    deployer_fix_permissions "$SITE_DIR"
+
+    # --- Refresh artifact caches ---
+    if [[ -L "${SITE_DIR}/current" && -f "${SITE_DIR}/current/artisan" ]]; then
+        ok "refreshing Laravel caches"
+        (cd "${SITE_DIR}/current" && php artisan config:cache --no-ansi -q && php artisan route:cache --no-ansi -q && php artisan view:cache --no-ansi -q) || true
+    fi
+
+    # --- Restart services ---
+    ok "restarting PHP-FPM and nginx"
+    sudo_cmd systemctl start php8.3-fpm nginx
+
+    rm -rf "$workdir"
+    echo
+    ok "restore complete: ${restore_name}"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Execute
+# ─────────────────────────────────────────────────────────────────────────────
+case "$CMD" in
+    create) backup_create ;;
+    list) backup_list ;;
+    restore)
+        BACKUP_ID="${1:-}"
+        backup_restore "$BACKUP_ID"
+        ;;
+esac

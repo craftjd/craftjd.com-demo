@@ -7,12 +7,16 @@ source "${BIN_ROOT}/lib.sh"
 usage() {
     cat <<'EOF'
 Usage:
-  remote server     CLIENT_NAME
-  remote github-key CLIENT_NAME [--regenerate] [--yes]
-  remote site       CLIENT_NAME [options]
-  remote env        CLIENT_NAME push|check|show [--yes]
+  remote server     [CLIENT_NAME]
+  remote github-key [CLIENT_NAME] [--regenerate] [--yes]
+  remote site       [CLIENT_NAME] [options]
+  remote migrate-deployer [CLIENT_NAME]
+  remote backup-cron  [CLIENT_NAME]
+  remote env        [CLIENT_NAME] push|check|show [--yes]
+  remote backup     [CLIENT_NAME] create|list|restore [BACKUP_ID]
 
-  CLIENT_NAME   config in bin/provision/clients/CLIENT_NAME.conf
+  CLIENT_NAME   defaults to "demo" — config in bin/provision/clients/demo.conf
+                Override to provision a second site from this project folder.
 
 Set up once per client:
   cp bin/provision/clients/_example.conf bin/provision/clients/CLIENT.conf
@@ -27,6 +31,11 @@ Typical first-time flow:
 Site options (--ssl, --cert-email, --db-*) override values in the client config.
 Env push shows a diff and asks for confirmation before updating .env on the server.
 EOF
+}
+
+require_client() {
+    CLIENT="${1:-site}"
+    [[ "$CLIENT" != -* ]] || { usage; exit 1; }
 }
 
 require_client() {
@@ -125,13 +134,11 @@ case "$CMD" in
 
     site)
         require_client "${1:-}"
-        shift
-        load_client_config "$CLIENT" site
-        ok "loaded client config: ${CLIENT}"
+        shift 2>/dev/null || true
 
-        EXTRA=()
-        read -r -a CONFIG_EXTRA <<<"$(site_remote_extra_args)"
-        EXTRA=("${CONFIG_EXTRA[@]}" "$@")
+        CONF_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
+        [[ -f "$CONF_SRC" ]] || fail "missing client config: ${CONF_SRC}"
+        source "$CONF_SRC"
 
         USER="${PROVISION_USER:-deploy}"
 
@@ -139,23 +146,24 @@ case "$CMD" in
             [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
         done
 
-        REMOTE_CMD="bash ~/site --domain=$(printf '%q' "$DOMAIN") --repo=$(printf '%q' "$REPO") --tier=$(printf '%q' "$TIER")"
-        for arg in "${EXTRA[@]}"; do
-            REMOTE_CMD+=" $(printf '%q' "$arg")"
-        done
+        CONFIG_NAME="$(basename "$CONF_SRC")"
 
-        echo "==> remote site (${USER}@${IP}, tier=${TIER}, domain=${DOMAIN}, client=${CLIENT})"
-        ok "copying scripts"
-        scp "${BIN_ROOT}/provision/site" "${BIN_ROOT}/provision/github-key" "${BIN_ROOT}/lib.sh" "${USER}@${IP}:~/"
+        echo "==> remote site (${USER}@${IP}, config=${CONFIG_NAME})"
+        ok "copying scripts and config"
+        scp "${BIN_ROOT}/provision/site" \
+            "${BIN_ROOT}/provision/github-key" \
+            "${BIN_ROOT}/lib.sh" \
+            "${CONF_SRC}" \
+            "${USER}@${IP}:~/"
 
         ok "running provision/site"
         # shellcheck disable=SC2029
-        ssh "${USER}@${IP}" "$REMOTE_CMD"
+        ssh "${USER}@${IP}" "bash ~/site ~/${CONFIG_NAME}"
 
         echo
         echo "Next:"
-        echo "  ./bin/remote env ${CLIENT} push"
-        echo "  ./bin/deploy && sudo systemctl reload php8.3-fpm && ./bin/check   # on server"
+        echo "  ./bin/remote env check   # verify .env matches client config"
+        echo "  task deploy              # first atomic deploy"
         ;;
 
     env)
@@ -180,30 +188,35 @@ case "$CMD" in
             *) fail "unknown env command: ${ENV_SUBCMD} (use push|check|show)" ;;
         esac
 
-        load_client_config "$CLIENT" env
+        CONF_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
+        [[ -f "$CONF_SRC" ]] || fail "missing client config: ${CONF_SRC}"
+        # shellcheck disable=SC1090
+        source "$CONF_SRC"
+
         USER="${PROVISION_USER:-deploy}"
 
         for file in provision/env lib.sh; do
             [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
         done
 
-        CONFIG_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
-        [[ -f "$CONFIG_SRC" ]] || fail "missing client config: ${CONFIG_SRC}"
+        CONFIG_NAME="$(basename "$CONF_SRC")"
 
         SSH_OPTS=()
         if [[ "$ENV_SUBCMD" == push && "$CONFIRM_YES" != true ]]; then
             SSH_OPTS=(-t)
         fi
 
-        REMOTE_CMD="bash ~/env $(printf '%q' "$ENV_SUBCMD") --domain=$(printf '%q' "$DOMAIN") --config=~/client.conf"
+        REMOTE_CMD="bash ~/env $(printf '%q' "$ENV_SUBCMD") ~/${CONFIG_NAME}"
         if [[ "$ENV_SUBCMD" == push && "$CONFIRM_YES" == true ]]; then
             REMOTE_CMD+=" --yes"
         fi
 
-        echo "==> remote env ${ENV_SUBCMD} (${USER}@${IP}, domain=${DOMAIN}, client=${CLIENT})"
-        ok "loaded client config: ${CLIENT}"
-        ok "copying scripts and client config"
-        scp "${BIN_ROOT}/provision/env" "${BIN_ROOT}/lib.sh" "${CONFIG_SRC}" "${USER}@${IP}:~/client.conf"
+        echo "==> remote env ${ENV_SUBCMD} (${USER}@${IP}, domain=${DOMAIN}, config=${CONFIG_NAME})"
+        ok "copying scripts and config"
+        scp "${BIN_ROOT}/provision/env" \
+            "${BIN_ROOT}/lib.sh" \
+            "${CONF_SRC}" \
+            "${USER}@${IP}:~/"
 
         ok "running provision/env ${ENV_SUBCMD}"
         # shellcheck disable=SC2029
@@ -212,9 +225,127 @@ case "$CMD" in
         if [[ "$ENV_SUBCMD" == push ]]; then
             echo
             echo "Next (on server):"
-            echo "  cd /var/www/${DOMAIN}"
+            echo "  cd /var/www/${DOMAIN}/current"
             echo "  ./bin/check"
         fi
+        ;;
+
+    migrate-deployer)
+        require_client "${1:-}"
+        shift 2>/dev/null || true
+
+        CONF_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
+        [[ -f "$CONF_SRC" ]] || fail "missing client config: ${CONF_SRC}"
+        # shellcheck disable=SC1090
+        source "$CONF_SRC"
+
+        USER="${PROVISION_USER:-deploy}"
+
+        for file in provision/migrate-deployer lib.sh; do
+            [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
+        done
+
+        CONFIG_NAME="$(basename "$CONF_SRC")"
+
+        echo "==> remote migrate-deployer (${USER}@${IP}, domain=${DOMAIN}, config=${CONFIG_NAME})"
+        ok "copying scripts and config"
+        scp "${BIN_ROOT}/provision/migrate-deployer" \
+            "${BIN_ROOT}/lib.sh" \
+            "${CONF_SRC}" \
+            "${USER}@${IP}:~/"
+
+        ok "running provision/migrate-deployer"
+        # shellcheck disable=SC2029
+        ssh "${USER}@${IP}" "bash ~/migrate-deployer ~/${CONFIG_NAME}"
+
+        echo
+        echo "Next:"
+        echo "  task deploy              # deploy from laptop (CLIENT=${CLIENT})"
+        ;;
+
+    backup)
+        require_client "${1:-}"
+        shift 2>/dev/null || true
+
+        BACKUP_CMD="${1:-}"
+        [[ -n "$BACKUP_CMD" ]] || fail "usage: remote backup create|list|restore [BACKUP_ID]"
+        case "$BACKUP_CMD" in
+            create | list | restore) shift ;;
+            *) fail "unknown backup command: ${BACKUP_CMD} (use create, list, or restore)" ;;
+        esac
+
+        CONF_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
+        [[ -f "$CONF_SRC" ]] || fail "missing client config: ${CONF_SRC}"
+        # shellcheck disable=SC1090
+        source "$CONF_SRC"
+
+        USER="${PROVISION_USER:-deploy}"
+
+        for file in backup lib.sh; do
+            [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
+        done
+
+        CONFIG_NAME="$(basename "$CONF_SRC")"
+
+        SSH_OPTS=()
+        if [[ "$BACKUP_CMD" == restore ]]; then
+            SSH_OPTS=(-t)
+        fi
+
+        BACKUP_EXTRA="${1:-}"
+
+        echo "==> remote backup ${BACKUP_CMD} (${USER}@${IP}, domain=${DOMAIN}, config=${CONFIG_NAME})"
+        ok "copying scripts and config"
+        scp "${BIN_ROOT}/backup" \
+            "${BIN_ROOT}/lib.sh" \
+            "${CONF_SRC}" \
+            "${USER}@${IP}:~/"
+
+        ok "running backup ${BACKUP_CMD}"
+        # shellcheck disable=SC2029
+        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" \
+            "bash ~/backup '${BACKUP_CMD}' ~/${CONFIG_NAME} '${BACKUP_EXTRA}'"
+
+        if [[ "$BACKUP_CMD" == create ]]; then
+            echo
+            echo "Next:"
+            echo "  task backup:list          # verify backup was created"
+        fi
+        ;;
+
+    backup-cron)
+        require_client "${1:-}"
+        shift 2>/dev/null || true
+
+        CONF_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
+        [[ -f "$CONF_SRC" ]] || fail "missing client config: ${CONF_SRC}"
+        # shellcheck disable=SC1090
+        source "$CONF_SRC"
+
+        USER="${PROVISION_USER:-deploy}"
+
+        for file in provision/backup-cron backup lib.sh; do
+            [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
+        done
+
+        CONFIG_NAME="$(basename "$CONF_SRC")"
+
+        echo "==> remote backup-cron (${USER}@${IP}, domain=${DOMAIN}, config=${CONFIG_NAME})"
+        ok "copying scripts and config"
+        scp "${BIN_ROOT}/provision/backup-cron" \
+            "${BIN_ROOT}/backup" \
+            "${BIN_ROOT}/lib.sh" \
+            "${CONF_SRC}" \
+            "${USER}@${IP}:~/"
+
+        ok "running provision/backup-cron"
+        # shellcheck disable=SC2029
+        ssh "${USER}@${IP}" "bash ~/backup-cron ~/${CONFIG_NAME}"
+
+        echo
+        echo "Daily backup cron installed (2:00 AM system localtime)."
+        echo "Backups accumulate in /var/www/${DOMAIN}/backups/."
+        echo "Retention follows BACKUP_KEEP_* settings in ${CONFIG_NAME}."
         ;;
 
     -h | --help)
