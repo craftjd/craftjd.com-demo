@@ -13,6 +13,7 @@
         "livewire/livewire": "^4.3"
     },
     "require-dev": {
+        "deployer/deployer": "^8.0",
         "fakerphp/faker": "^1.23",
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
@@ -47,6 +48,21 @@
         "dev": [
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+        ],
+        "sail:setup": [
+            "composer install",
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+            "@php artisan key:generate",
+            "@php artisan migrate --force",
+            "@php artisan sail:install --with=mailpit",
+            "./vendor/bin/sail up -d",
+            "./vendor/bin/sail npm install --ignore-scripts",
+            "./vendor/bin/sail npm run build"
+        ],
+        "sail:dev": [
+            "Composer\\Config::disableProcessTimeout",
+            "./vendor/bin/sail npm run dev"
         ],
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
