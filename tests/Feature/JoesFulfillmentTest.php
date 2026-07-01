@@ -8,12 +8,16 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Group;
 use RuntimeException;
+use Tests\Support\WithJoesTestHelpers;
 use Tests\TestCase;
 
+#[Group('joes')]
 class JoesFulfillmentTest extends TestCase
 {
     use RefreshDatabase;
+    use WithJoesTestHelpers;
 
     private const PUBLIC_ID_42 = '11111111-1111-4111-8111-111111111111';
 
@@ -23,8 +27,7 @@ class JoesFulfillmentTest extends TestCase
     {
         parent::setUp();
 
-        Config::set('joes.main_site_webhook_url', 'https://craftjd.test/api/joes/requests');
-        Config::set('joes.webhook_secret', 'test-secret');
+        $this->setUpJoesConfig();
         Config::set('joes.local_deploy_bypass_git', false);
     }
 
@@ -238,6 +241,42 @@ class JoesFulfillmentTest extends TestCase
         $service->fulfill(self::PUBLIC_ID_42, 'Updated summer hours.', localBypassGit: true);
     }
 
+    public function test_happy_path_full_pipeline(): void
+    {
+        Http::fake([
+            'https://craftjd.test/api/joes/requests/'.self::PUBLIC_ID_42.'/fulfilled' => Http::response(['status' => 'fulfilled']),
+        ]);
+
+        $service = app(JoesFulfillmentService::class);
+
+        // Step 1 — Claim
+        $claim = $service->claim(self::PUBLIC_ID_42, 42, now()->subDay());
+        $this->assertSame('claimed', $claim->pipelineStep());
+        $this->assertNotNull($claim->claimed_at);
+
+        // Step 2 — Record deploy
+        $sha = $claim->claim_deploy_git_sha ?? $this->joesSha;
+        $claim->forceFill(['claim_deploy_git_sha' => $sha])->save();
+        $recorded = $service->recordDeploy(self::PUBLIC_ID_42, $sha, now()->addMinute(), localBypassGit: true);
+        $this->assertSame('deployed', $recorded->pipelineStep());
+        $this->assertNotNull($recorded->deploy_git_sha);
+        $this->assertTrue($recorded->deploy_deployed_at->greaterThan($recorded->claimed_at));
+
+        // Step 3 — Fulfill
+        $fulfillment = $service->fulfill(self::PUBLIC_ID_42, 'Updated summer hours.', localBypassGit: true);
+        $this->assertSame('done', $fulfillment->pipelineStep());
+        $this->assertNotNull($fulfillment->fulfilled_at);
+        $this->assertSame('Updated summer hours.', $fulfillment->summary);
+        $this->assertSame($sha, $fulfillment->fulfill_deploy_git_sha);
+
+        // Step 4 — No pending claims remain
+        $this->assertNull(JoesChangeFulfillment::pendingForPublicId(self::PUBLIC_ID_42));
+
+        // Step 5 — Main site was notified
+        Http::assertSent(fn ($request) => $request->url() === 'https://craftjd.test/api/joes/requests/'.self::PUBLIC_ID_42.'/fulfilled'
+            && $request['summary'] === 'Updated summer hours.');
+    }
+
     public function test_claim_link_starts_pending_claim(): void
     {
         $submittedAt = now()->subDay()->timestamp;
@@ -309,11 +348,6 @@ class JoesFulfillmentTest extends TestCase
 
         $this->get('/joes/requests/'.self::PUBLIC_ID_42.'/claim?number=42&submitted_at='.$submittedAt.'&expires='.$expires.'&signature='.$signature)
             ->assertForbidden();
-    }
-
-    private function claimSignature(string $publicId, int $submittedAt, int $expires): string
-    {
-        return hash_hmac('sha256', "{$publicId}|{$submittedAt}|{$expires}", 'test-secret');
     }
 
     /**
