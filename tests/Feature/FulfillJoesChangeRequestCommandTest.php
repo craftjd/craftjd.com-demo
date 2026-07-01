@@ -6,11 +6,15 @@ use App\Models\JoesChangeFulfillment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Group;
+use Tests\Support\WithJoesTestHelpers;
 use Tests\TestCase;
 
+#[Group('joes')]
 class FulfillJoesChangeRequestCommandTest extends TestCase
 {
     use RefreshDatabase;
+    use WithJoesTestHelpers;
 
     private const PUBLIC_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -18,8 +22,7 @@ class FulfillJoesChangeRequestCommandTest extends TestCase
     {
         parent::setUp();
 
-        Config::set('joes.main_site_webhook_url', 'https://craftjd.test/api/joes/requests');
-        Config::set('joes.webhook_secret', 'test-secret');
+        $this->setUpJoesConfig();
         Config::set('joes.local_deploy_bypass_git', true);
     }
 
@@ -136,7 +139,7 @@ class FulfillJoesChangeRequestCommandTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function previewPayload(): array
+    private function previewPayload(string $publicId = self::PUBLIC_ID, int $number = 42): array
     {
         return [
             'public_id' => self::PUBLIC_ID,
