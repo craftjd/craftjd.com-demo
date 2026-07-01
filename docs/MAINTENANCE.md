@@ -191,6 +191,15 @@ sudo systemctl reload php8.3-fpm
 
 `bin/deploy` pulls `main`, runs composer, npm build, migrate, caches config. It does **not** edit `.env`.
 
+**Joe's Cafe integration** (optional — in `CLIENT.conf`, synced via `env push`):
+
+| Key | Purpose |
+|-----|---------|
+| `MAIN_SITE_DOMAIN` | Main site hostname → `MAIN_SITE_WEBHOOK_URL=https://{domain}/api/joes/requests` |
+| `MAIN_SITE_WEBHOOK_URL` | Explicit override for main-site API base |
+| `JOES_WEBHOOK_SECRET` | Shared bearer token (must match main site) |
+| `JOES_LOCAL_DEPLOY_BYPASS_GIT` | `false` in production; local dev only |
+
 ### Change site or mail settings (laptop)
 
 ```bash
