@@ -1,0 +1,127 @@
+version: '3'
+
+dotenv: ['.env']
+
+vars:
+  CLIENT: site
+
+tasks:
+  setup:
+    desc: First-time project setup
+    cmds:
+      - composer install
+      - cp -n .env.example .env 2>/dev/null || true
+      - touch database/database.sqlite
+      - php artisan key:generate
+      - php artisan migrate
+      - npm install --ignore-scripts
+      - npm run build
+
+  dev:
+    desc: Start all dev services
+    cmds:
+      - concurrently "php artisan serve" "php artisan queue:listen" "php artisan pail" "npm run dev"
+
+  # ─── Tests ────────────────────────────────────────────────────────────────
+  test:
+    desc: Run full PHPUnit test suite
+    cmds:
+      - php artisan config:clear
+      - php artisan test
+
+  test:fast:
+    desc: Run tests without config:clear (faster for tight loops)
+    cmds:
+      - php artisan test
+
+  test:joes:
+    desc: Run all Joe's pipeline tests (group=joes)
+    cmds:
+      - php artisan config:clear
+      - php artisan test --group=joes
+
+  test:joes:happy:
+    desc: Run the full happy-path pipeline end-to-end
+    cmds:
+      - php artisan config:clear
+      - php artisan test --filter="test_happy_path_full_pipeline" tests/Feature/JoesFulfillmentTest.php
+
+  test:file:
+    desc: Run a single test file (FILE=tests/Feature/...)
+    cmds:
+      - php artisan config:clear
+      - php artisan test {{.FILE}}
+
+  check:
+    desc: Run health checks
+    cmds:
+      - ./bin/check
+
+  fulfill:
+    desc: Mark a Joe's request fulfilled (PUBLIC_ID=xxx SUMMARY="description")
+    requires:
+      vars: [PUBLIC_ID]
+    cmds:
+      - ./bin/fulfill {{.PUBLIC_ID}} "{{.SUMMARY}}"
+
+  # ─── Deploy / rollback (remote via Deployer SSH) ─────────────────────────
+  deploy:
+    desc: Deploy to production (CLIENT=demo matches demo.conf host name)
+    cmds:
+      - vendor/bin/dep deploy {{.CLIENT}}
+
+  deploy:unlock:
+    desc: Clear a stale Deployer lock after a failed deploy
+    cmds:
+      - vendor/bin/dep deploy:unlock {{.CLIENT}}
+
+  rollback:
+    desc: Roll back to previous release
+    cmds:
+      - vendor/bin/dep rollback {{.CLIENT}}
+
+  # ─── Provisioning (one-time per server, via bin/remote SSH) ──────────────
+  provision:server:
+    desc: Provision a new VPS (CLIENT=demo)
+    cmds:
+      - ./bin/remote server {{.CLIENT}}
+
+  provision:github-key:
+    desc: Generate GitHub deploy key on VPS
+    cmds:
+      - ./bin/remote github-key {{.CLIENT}}
+
+  provision:site:
+    desc: Set up site on provisioned VPS
+    cmds:
+      - ./bin/remote site {{.CLIENT}}
+
+  provision:env:
+    desc: Sync .env from client config to server
+    cmds:
+      - ./bin/remote env {{.CLIENT}} push
+
+  provision:all:
+    desc: Full provision chain (server -> github-key -> site -> env push)
+    deps: [provision:server, provision:github-key, provision:site, provision:env]
+
+  # ─── Backup / restore (via bin/remote SSH) ──────────────────────────────
+  backup:create:
+    desc: Create a backup on the server (config, database, user uploads, logs)
+    cmds:
+      - ./bin/remote backup {{.CLIENT}} create
+
+  backup:list:
+    desc: List available backups with dates, sizes, and ages
+    cmds:
+      - ./bin/remote backup {{.CLIENT}} list
+
+  backup:restore:
+    desc: Restore from a backup — run without args for interactive picker, or pass BACKUP=ID
+    cmds:
+      - ./bin/remote backup {{.CLIENT}} restore {{.BACKUP}}
+
+  backup:cron:
+    desc: Install daily backup cron (2:00 AM) on the VPS for this CLIENT
+    cmds:
+      - ./bin/remote backup-cron {{.CLIENT}}
