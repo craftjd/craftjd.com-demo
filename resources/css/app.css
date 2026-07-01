@@ -151,10 +151,6 @@
     @apply relative h-[4.5rem] w-[4.5rem] shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-pine-100 to-fog ring-1 ring-fog;
   }
 
-  .staff-caricature__svg {
-    @apply h-full w-full;
-  }
-
   .staff-list__meta {
     @apply flex flex-wrap items-baseline gap-x-3 gap-y-1;
   }
@@ -205,10 +201,6 @@
 
   .responsibility-note--embedded {
     @apply lg:pl-2;
-  }
-
-  .contact-form-panel {
-    @apply rounded-sm border border-fog bg-white p-6 sm:p-8;
   }
 
   .contact-bar {
@@ -588,28 +580,6 @@
 
   .joes-mark {
     @apply h-10 w-10 shrink-0 text-pine-800;
-  }
-
-  .footer-shell {
-    @apply relative overflow-hidden border-t border-pine-600 text-pine-100/75;
-  }
-
-  .footer-gradient {
-    background:
-      radial-gradient(ellipse 60% 90% at 100% 0%, rgb(58 107 88 / 0.35), transparent 55%),
-      linear-gradient(168deg, #1c3a30 0%, #245041 42%, #2a2620 100%);
-  }
-
-  .footer-heading {
-    @apply font-display text-xs font-bold uppercase tracking-[0.22em] text-pine-100/50;
-  }
-
-  .footer-lead {
-    @apply mt-4 text-base leading-relaxed text-pine-100/80;
-  }
-
-  .footer-changelog-item {
-    @apply border-l-2 border-clay-500/50 pl-4;
   }
 
   .error-page {

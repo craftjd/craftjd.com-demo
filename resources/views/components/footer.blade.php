@@ -1,68 +1,81 @@
 @inject('content', App\Services\SiteContent::class)
-@inject('deployMeta', App\Services\DeployMeta::class)
 
 @php
     $hours = $content->list('hours', 'schedule');
     $footer = $content->get('footer');
     $philosophy = $footer['philosophy'] ?? null;
-    $changelog = $deployMeta->changelog();
+    $navigation = config('client.navigation', []);
+    $siteName = config('client.site_name');
+    $tagline = config('client.theme.footer_text');
+    $contact = $content->get('contact');
 @endphp
 
-<footer class="footer-shell">
-    <div class="footer-gradient pointer-events-none absolute inset-0" aria-hidden="true"></div>
-
-    <div class="site-wrap relative py-16 sm:py-20">
-        <div class="grid gap-12 lg:grid-cols-12 lg:gap-12">
-            <div class="lg:col-span-5">
+<footer class="bg-stone-950 text-stone-400">
+    <div class="site-wrap py-16 sm:py-20 lg:py-24">
+        <div class="grid gap-12 lg:grid-cols-12 lg:gap-16">
+            {{-- Brand — deliberate asymmetry, generous vertical room --}}
+            <div class="lg:col-span-6">
                 <div class="flex items-center gap-3">
-                    <x-joes.logo-mark class="h-12 w-12 text-clay-500" />
-                    <p class="font-display text-2xl font-bold text-cream">{{ config('client.site_name') }}</p>
+                    <x-joes.logo-mark class="h-10 w-10 shrink-0 text-clay-500" />
+                    <div>
+                        <p class="font-display text-2xl font-bold tracking-tight text-cream">{{ $siteName }}</p>
+                        @if ($tagline)
+                            <p class="-mt-0.5 text-sm text-stone-500">{{ $tagline }}</p>
+                        @endif
+                    </div>
                 </div>
-                @if ($footerText = config('client.theme.footer_text'))
-                    <p class="mt-4 text-base leading-relaxed text-pine-100/70">{{ $footerText }}</p>
-                @endif
+
                 @if ($philosophy)
-                    <div class="mt-8 border-t border-pine-600/30 pt-8">
-                        <p class="footer-heading">Philosophy</p>
-                        <p class="footer-lead">{{ $philosophy }}</p>
-                    </div>
-                @endif
-                @if ($hours)
-                    <div class="lg:col-span-3">
-                        <p class="footer-heading">Hours</p>
-                        <ul class="mt-5 space-y-3 text-base">
-                            @foreach ($hours as $row)
-                                <li class="flex justify-between gap-4 border-b border-pine-600/25 pb-3 last:border-0 last:pb-0">
-                                    <span class="text-pine-100/80">{{ $row['days'] }}</span>
-                                    <span class="font-semibold text-cream">{{ $row['hours'] }}</span>
-                                </li>
-                            @endforeach
-                        </ul>
-                    </div>
+                    <p class="mt-8 max-w-prose text-sm leading-relaxed text-stone-400/70 italic">
+                        {{ $philosophy }}
+                    </p>
                 @endif
             </div>
 
-            @if ($changelog !== [])
-                <div class="lg:col-span-6">
-                    <p class="footer-heading">Request changelog</p>
-                    <ol class="mt-6 space-y-5">
-                        @foreach ($changelog as $entry)
-                            <li class="footer-changelog-item">
-                                @if ($entry['datetime'])
-                                    <time datetime="{{ $entry['datetime'] }}" class="text-xs font-semibold uppercase tracking-wide text-fog/60">{{ $entry['date'] }}</time>
-                                @endif
-                                <p class="mt-1 text-sm leading-relaxed text-fog/90">{{ $entry['summary'] }}</p>
+            {{-- Navigation + Hours — compact right column --}}
+            <div class="lg:col-span-5 lg:col-start-8">
+                @if ($navigation)
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600">Navigate</p>
+                    <ul class="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+                        @foreach ($navigation as $link)
+                            <li>
+                                <a href="{{ $link['url'] }}" class="text-sm font-medium text-stone-400 transition hover:text-clay-500">
+                                    {{ $link['label'] }}
+                                </a>
                             </li>
                         @endforeach
-                    </ol>
-                </div>
-            @endif
+                    </ul>
+                @endif
+
+                @if ($contact && ($contact['phone'] ?? null))
+                    <p class="mt-10 text-xs font-semibold uppercase tracking-[0.2em] text-stone-600">Call</p>
+                    <a href="tel:{{ preg_replace('/\D/', '', $contact['phone']) }}" class="mt-2 block text-sm font-medium text-stone-400 transition hover:text-clay-500">
+                        {{ $contact['phone'] }}
+                    </a>
+                @endif
+
+                @if ($hours)
+                    <div class="mt-10">
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-600">Hours</p>
+                        <div class="mt-4 space-y-1.5">
+                            @foreach ($hours as $row)
+                                <div class="flex gap-3 text-sm">
+                                    <span class="w-16 shrink-0 font-medium text-stone-500">{{ $row['days'] }}</span>
+                                    <span class="text-stone-400">{{ $row['hours'] }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+            </div>
         </div>
     </div>
 
-    <div class="relative border-t border-stone-700/30">
-        <div class="site-wrap py-8 text-center text-sm text-pine-100/50">
-            <p>&copy; {{ date('Y') }} {{ config('client.site_name') }}. Drinkable Coffee.</p>
+    {{-- Colophon --}}
+    <div class="border-t border-stone-800/60">
+        <div class="site-wrap flex flex-wrap items-baseline justify-between gap-2 py-6 text-xs text-stone-600">
+            <p>&copy; {{ date('Y') }} {{ $siteName }}. <span class="text-stone-500/50">{{ config('client.site_description') }}</span></p>
+            <span class="h-1 w-1 shrink-0 rounded-full bg-clay-600/40" aria-hidden="true"></span>
         </div>
     </div>
 </footer>

@@ -31,8 +31,6 @@ return [
         ['label' => 'Takeout', 'url' => '#takeout'],
         ['label' => 'Hours', 'url' => '#hours'],
         ['label' => 'Team', 'url' => '#team'],
-        ['label' => 'Contact', 'url' => '#contact'],
-        ['label' => 'Club', 'url' => '#club'],
     ],
 
     /*
