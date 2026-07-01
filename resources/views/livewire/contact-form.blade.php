@@ -20,7 +20,7 @@
         </div>
 
         <div>
-            <label for="contact-subject" class="form-label">Subject <span class="font-normal text-stone-500">(optional)</span></label>
+            <label for="contact-subject" class="form-label">{{ $subjectLabel }} <span class="font-normal text-stone-400">(optional)</span></label>
             <input id="contact-subject" type="text" wire:model.blur="subject" class="form-input" @disabled($submitted)>
             @error('subject') <p class="form-error">{{ $message }}</p> @enderror
         </div>

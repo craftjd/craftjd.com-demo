@@ -16,6 +16,8 @@ class ContactForm extends Component
 
     public bool $submitted = false;
 
+    public string $subjectLabel = 'Subject';
+
     protected function rules(): array
     {
         return [

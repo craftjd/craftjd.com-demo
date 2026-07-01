@@ -44,6 +44,11 @@
                                 </a>
                             </li>
                         @endforeach
+                        <li>
+                            <a href="{{ url('/careers') }}" class="text-sm font-medium text-clay-500 transition hover:text-clay-400">
+                                Careers
+                            </a>
+                        </li>
                     </ul>
                 @endif
 

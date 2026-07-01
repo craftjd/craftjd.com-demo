@@ -3,7 +3,7 @@
 
     $href = function (string $url): string {
         if (str_starts_with($url, '#')) {
-            return $url;
+            return url('/').$url;
         }
 
         return url($url);
@@ -45,6 +45,13 @@
                         </a>
                     </li>
                 @endforeach
+
+                {{-- Careers — distinct treatment, set apart from main nav --}}
+                <li class="ml-3 pl-3 border-l border-fog/60">
+                    <a href="{{ url('/careers') }}" class="rounded-sm px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-clay-600 transition hover:text-clay-700">
+                        We{{ "'" }}re hiring
+                    </a>
+                </li>
             </ul>
         @endif
     </nav>
@@ -59,6 +66,11 @@
                         </a>
                     </li>
                 @endforeach
+                <li class="border-t border-fog/60 pt-2 mt-1">
+                    <a href="{{ url('/careers') }}" class="block rounded-sm px-3 py-2 text-xs font-semibold uppercase tracking-wider text-clay-600 hover:bg-fog" @click="open = false">
+                        We{{ "'" }}re hiring
+                    </a>
+                </li>
             </ul>
         </div>
     @endif
