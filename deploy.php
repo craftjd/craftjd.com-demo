@@ -52,6 +52,12 @@ function register_client_host(string $confFile): bool
         return false;
     }
 
+    // Private GitHub repos: rewrite host so ~/.ssh/config picks the per-domain key.
+    // Matches the rewrite in bin/lib.sh: github_repo_clone_url().
+    if ($domain && preg_match('/^git@github\.com:(.+)$/', $repo, $m)) {
+        $repo = 'git@github.com-' . $domain . ':' . $m[1];
+    }
+
     $sharedFiles = ['.env'];
     if ($tier === 'flat-file') {
         $sharedFiles[] = 'database/database.sqlite';
@@ -117,4 +123,15 @@ task('deploy:check', function () {
     run('./bin/check');
 });
 after('deploy:meta', 'deploy:check');
+
+task('deploy:app_key', function () {
+    $result = run('grep "^APP_KEY=.\\{30,\\}" {{deploy_path}}/shared/.env || true');
+    if (trim($result) === '') {
+        writeln("<comment>APP_KEY missing from shared/.env — generating...</comment>");
+        cd('{{release_path}}');
+        run('php artisan key:generate --force');
+        writeln("<info>APP_KEY generated</info>");
+    }
+});
+before('deploy:check', 'deploy:app_key');
 after('rollback', 'deploy:meta');
