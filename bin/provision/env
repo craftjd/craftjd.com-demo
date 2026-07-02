@@ -15,7 +15,7 @@ WEB_ROOT="/var/www"
 
 usage() {
     cat <<'EOF'
-Usage: env push|check|show [options] [CONF_FILE]
+Usage: env push|check|show [options]
 
 Sync client .conf values into the site .env on the server.
 
