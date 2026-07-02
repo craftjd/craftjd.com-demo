@@ -57,8 +57,8 @@ fi
 if [[ "$UPDATE_MODE" == false ]]; then
     mkdir -p "${SITE_DIR}/releases" "${SITE_DIR}/shared" "${SITE_DIR}/.dep" "${SITE_DIR}/shared/database"
 
-    CLONE_URL="$(github_repo_clone_url "$REPO")"
-    require_github_repo_access "$REPO"
+    CLONE_URL="$(github_repo_clone_url "$REPO" "$DOMAIN")"
+    require_github_repo_access "$REPO" "$DOMAIN"
 
     ok "cloning ${CLONE_URL} → releases/1"
     if ! git clone "$CLONE_URL" "$RELEASE_DIR"; then

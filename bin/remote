@@ -102,6 +102,9 @@ case "$CMD" in
         load_client_config "$CLIENT" server
         USER="${PROVISION_USER:-deploy}"
 
+        CONF_SRC="${BIN_ROOT}/provision/clients/${CLIENT}.conf"
+        [[ -f "$CONF_SRC" ]] || fail "missing client config: ${CONF_SRC}"
+
         for file in provision/github-key lib.sh; do
             [[ -f "${BIN_ROOT}/${file}" ]] || fail "missing bin/${file}"
         done
@@ -111,14 +114,17 @@ case "$CMD" in
             SSH_OPTS=(-t)
         fi
 
-        echo "==> remote github-key (${USER}@${IP}, client=${CLIENT})"
-        ok "loaded client config: ${CLIENT}"
-        ok "copying scripts"
-        scp "${BIN_ROOT}/provision/github-key" "${BIN_ROOT}/lib.sh" "${USER}@${IP}:~/"
+        CONFIG_NAME="$(basename "$CONF_SRC")"
+        echo "==> remote github-key (${USER}@${IP}, config=${CONFIG_NAME})"
+        ok "copying scripts and config"
+        scp "${BIN_ROOT}/provision/github-key" \
+            "${BIN_ROOT}/lib.sh" \
+            "${CONF_SRC}" \
+            "${USER}@${IP}:~/"
 
         ok "running provision/github-key"
         # shellcheck disable=SC2029
-        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "REPO='${REPO:-}' bash ~/github-key ${GITHUB_KEY_ARGS[*]}"
+        ssh "${SSH_OPTS[@]}" "${USER}@${IP}" "bash ~/github-key ~/${CONFIG_NAME} ${GITHUB_KEY_ARGS[*]}"
 
         echo
         if [[ "$REGEN" == true ]]; then

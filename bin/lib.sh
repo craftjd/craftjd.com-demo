@@ -345,10 +345,20 @@ site_remote_extra_args() {
     echo "${args[@]}"
 }
 
-GITHUB_DEPLOY_KEY_NAME="${GITHUB_DEPLOY_KEY_NAME:-github_deploy}"
+# Derive a deploy key name from the site domain.
+# Called after the .conf is sourced (so $DOMAIN is set when available).
+github_deploy_key_name() {
+    local domain="${1:-${DOMAIN:-}}"
+    if [[ -n "$domain" ]]; then
+        echo "github_deploy_${domain//./_}"
+    else
+        echo "github_deploy"
+    fi
+}
 
 github_deploy_key_path() {
-    echo "${HOME}/.ssh/${GITHUB_DEPLOY_KEY_NAME}"
+    local domain="${1:-}"
+    echo "${HOME}/.ssh/$(github_deploy_key_name "$domain")"
 }
 
 # git@github.com:org/repo.git → https://github.com/org/repo.git
@@ -391,16 +401,18 @@ github_repo_is_public() {
 }
 
 github_deploy_key_exists() {
+    local domain="${1:-}"
     local key_path
-    key_path="$(github_deploy_key_path)"
+    key_path="$(github_deploy_key_path "$domain")"
     [[ -f "${key_path}" && -f "${key_path}.pub" ]]
 }
 
 # Exit 0 when the deploy user can read the repo over SSH (deploy key on repo).
 github_repo_ssh_accessible() {
     local repo="$1"
+    local domain="${2:-}"
     local key_path
-    key_path="$(github_deploy_key_path)"
+    key_path="$(github_deploy_key_path "$domain")"
 
     [[ -f "$key_path" ]] || return 1
 
@@ -408,12 +420,22 @@ github_repo_ssh_accessible() {
         git ls-remote --exit-code "$repo" HEAD &>/dev/null
 }
 
-# Use HTTPS for public GitHub repos so SSH deploy keys are not required.
+# Return a git clone URL.
+#   - Public repos → HTTPS (anonymous, no key required).
+#   - Private repos → SSH with a <github.com-DOMAIN> host alias so the per-domain
+#     SSH config identity is selected automatically.
 github_repo_clone_url() {
     local repo="$1"
+    local domain="${2:-}"
 
     if github_repo_is_github "$repo" && github_repo_is_public "$repo"; then
         github_repo_to_https "$repo"
+        return 0
+    fi
+
+    # Private repo — rewrite hostname so ~/.ssh/config picks the right key.
+    if [[ -n "$domain" && "$repo" =~ ^git@github\.com:(.+)$ ]]; then
+        echo "git@github.com-${domain}:${BASH_REMATCH[1]}"
         return 0
     fi
 
@@ -423,6 +445,7 @@ github_repo_clone_url() {
 # Before git clone: fail early for private GitHub repos missing a deploy key setup.
 require_github_repo_access() {
     local repo="$1"
+    local domain="${2:-}"
 
     github_repo_is_github "$repo" || return 0
 
@@ -431,7 +454,7 @@ require_github_repo_access() {
         return 0
     fi
 
-    if ! github_deploy_key_exists; then
+    if ! github_deploy_key_exists "$domain"; then
         warn "private GitHub repo requires a deploy key on this server"
         echo "       REPO=${repo}" >&2
         echo "       Run: ./bin/remote github-key CLIENT_NAME" >&2
@@ -440,10 +463,12 @@ require_github_repo_access() {
         exit 1
     fi
 
-    if ! github_repo_ssh_accessible "$repo"; then
+    if ! github_repo_ssh_accessible "$repo" "$domain"; then
+        local key_name
+        key_name="$(github_deploy_key_name "$domain")"
         warn "deploy key exists but cannot read this private repo"
         echo "       REPO=${repo}" >&2
-        echo "       Add ${HOME}/.ssh/${GITHUB_DEPLOY_KEY_NAME}.pub to the repo deploy keys (read-only)," >&2
+        echo "       Add ${HOME}/.ssh/${key_name}.pub to the repo deploy keys (read-only)," >&2
         echo "       or run ./bin/remote github-key if you have not yet." >&2
         exit 1
     fi
@@ -478,12 +503,12 @@ client_env_format_display() {
 }
 
 client_env_add_if_set() {
-    local -n _desired="$1"
+    local -n _dest="$1"
     local key="$2"
     local value="${3:-}"
 
     if [[ -n "$value" ]]; then
-        _desired["$key"]="$value"
+        _dest["$key"]="$value"
     fi
 }
 
@@ -552,7 +577,7 @@ client_env_count_changes() {
     local -n _desired="$2"
     local key old new count=0
 
-    for key in $(client_env_sorted_keys _desired); do
+    for key in $(client_env_sorted_keys "$2"); do
         old="$(load_env_var "$key" "$env_file")"
         new="${_desired[$key]}"
         if [[ "$old" != "$new" ]]; then
@@ -568,7 +593,7 @@ client_env_print_diff() {
     local -n _desired="$2"
     local key old new
 
-    for key in $(client_env_sorted_keys _desired); do
+    for key in $(client_env_sorted_keys "$2"); do
         old="$(load_env_var "$key" "$env_file")"
         new="${_desired[$key]}"
         if [[ "$old" != "$new" ]]; then

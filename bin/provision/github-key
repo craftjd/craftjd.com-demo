@@ -17,7 +17,9 @@ CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
 source "$CONF_FILE"
 shift 2>/dev/null || true
 
-KEY_NAME="github_deploy"
+KEY_NAME="$(github_deploy_key_name "$DOMAIN")"
+KEY_PATH="${HOME}/.ssh/${KEY_NAME}"
+SSH_HOST="github.com-${DOMAIN}"
 REGENERATE=false
 CONFIRM_YES=false
 SSH_CONFIG="${HOME}/.ssh/config"
@@ -27,17 +29,17 @@ usage() {
     cat <<'EOF'
 Usage: github-key [options] [CONF_FILE]
 
-Run on the VPS as the deploy user (once per server, before provision/site
+Run on the VPS as the deploy user (once per domain, before provision/site
 for private repos). Safe to run for public repos — the key is simply unused.
+
+Derives the key file name from DOMAIN in the .conf, so each site on the
+same server gets its own deploy key (one private repo per key).
 
 Reads REPO from the given .conf file to determine if the site uses private repos.
 
 Options:
   --regenerate, -f   Replace an existing deploy key (backs up the old key pair)
   --yes, -y          Skip confirmation (required for non-interactive --regenerate)
-
-Creates an SSH deploy key, configures GitHub in ~/.ssh/config, and prints the
-public key to add to each private repo (Settings → Deploy keys → read-only).
 
 EOF
 }
@@ -52,18 +54,17 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-KEY_PATH="${HOME}/.ssh/${KEY_NAME}"
-
 configure_github_ssh_config() {
-    if [[ -f "$SSH_CONFIG" ]] && grep -q "Host github.com" "$SSH_CONFIG" 2>/dev/null; then
-        ok "github.com already in ~/.ssh/config"
+    # Only add a block for this domain if one does not already exist.
+    if [[ -f "$SSH_CONFIG" ]] && grep -q "Host ${SSH_HOST}$" "$SSH_CONFIG" 2>/dev/null; then
+        ok "${SSH_HOST} already in ~/.ssh/config"
         return 0
     fi
 
-    ok "configuring ~/.ssh/config for github.com"
+    ok "configuring ~/.ssh/config for ${SSH_HOST}"
     cat >>"$SSH_CONFIG" <<EOF
 
-Host github.com
+Host ${SSH_HOST}
     HostName github.com
     User git
     IdentityFile ${KEY_PATH}
@@ -94,8 +95,8 @@ confirm_regenerate() {
 
     echo
     warn "regenerating will invalidate the current deploy key on GitHub"
-    echo "       git pull will fail on private repos until you remove the old key" >&2
-    echo "       and add the new public key to each repo." >&2
+    echo "       git pull will fail for this repo until you remove the old key" >&2
+    echo "       and add the new public key to the repo." >&2
     echo >&2
     read -r -p "Regenerate deploy key? [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]] || fail "aborted"
@@ -103,7 +104,7 @@ confirm_regenerate() {
 
 generate_deploy_key() {
     ok "generating ${KEY_PATH}"
-    ssh-keygen -t ed25519 -C "deploy@$(hostname -f 2>/dev/null || hostname)" -f "${KEY_PATH}" -N ""
+    ssh-keygen -t ed25519 -C "deploy@$(hostname -f 2>/dev/null || hostname) [${DOMAIN}]" -f "${KEY_PATH}" -N ""
     chmod 600 "${KEY_PATH}" "${KEY_PATH}.pub"
 }
 
@@ -114,7 +115,7 @@ if [[ "$REGENERATE" == true && -f "${KEY_PATH}" ]]; then
     confirm_regenerate
 
     echo
-    echo "Remove this OLD deploy key from every private repo on this server:"
+    echo "Remove this OLD deploy key from the repo:"
     echo "  GitHub → repo → Settings → Deploy keys → delete matching key"
     echo
     cat "${KEY_PATH}.pub"
@@ -145,19 +146,19 @@ fi
 
 echo
 if [[ "$REGENERATE" == true ]]; then
-    echo "Add this NEW deploy key to each private GitHub repo:"
+    echo "Add this NEW deploy key to the repo:"
 else
-    echo "Add this deploy key to each private GitHub repo:"
+    echo "Add this deploy key to the repo:"
 fi
 echo "  Repo → Settings → Deploy keys → Add deploy key"
-echo "  Title: $(hostname -f 2>/dev/null || hostname) deploy"
+echo "  Title: $(hostname -f 2>/dev/null || hostname) deploy (${DOMAIN})"
 echo "  Allow write access: OFF (read-only)"
 echo
 cat "${KEY_PATH}.pub"
 echo
-echo "Test after updating deploy keys:"
-echo "  ssh -T git@github.com"
-echo "  git ls-remote git@github.com:YOUR_ORG/your-repo.git HEAD"
+echo "After adding the deploy key, the provision/site clone command will use:"
+echo "  git clone git@github.com-${DOMAIN}:ORG/REPO.git"
+echo "  (the host alias routes through ~/.ssh/config → ${KEY_NAME})"
 echo
 if [[ "$REGENERATE" == true ]]; then
     echo "Old key pairs were backed up alongside ${KEY_PATH} (*.bak.TIMESTAMP)."
