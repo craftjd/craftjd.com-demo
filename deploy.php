@@ -113,7 +113,7 @@ task('deploy:app-key', function () {
         writeln('  <info>✓</info> Generated missing APP_KEY');
     }
 });
-after('deploy:env', 'deploy:app-key');
+after('deploy:shared', 'deploy:app-key');
 
 task('deploy:npm', function () {
     cd('{{release_path}}');
