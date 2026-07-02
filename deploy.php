@@ -115,6 +115,20 @@ task('deploy:app-key', function () {
 });
 after('deploy:shared', 'deploy:app-key');
 
+task('deploy:shared-db-perms', function () {
+    $dbDir = '{{deploy_path}}/shared/database';
+    $exists = run("test -d {$dbDir} && echo 1 || echo 0");
+
+    if (trim($exists) !== '1') {
+        return;
+    }
+
+    run("sudo chgrp www-data {$dbDir} && sudo chmod g+w {$dbDir}");
+    run("test -f {$dbDir}/database.sqlite && sudo chgrp www-data {$dbDir}/database.sqlite && sudo chmod g+w {$dbDir}/database.sqlite || true");
+    writeln('  <info>✓</info> Fixed shared database permissions');
+});
+after('deploy:shared', 'deploy:shared-db-perms');
+
 task('deploy:npm', function () {
     cd('{{release_path}}');
     run('npm ci --no-audit --no-fund');
