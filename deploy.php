@@ -32,7 +32,7 @@ function parse_client_conf(string $path): array
 
 /**
  * Register one Deployer host from a client config file.
- * Host name = conf basename (e.g. demo.conf -> dep deploy demo).
+ * Host name = conf basename (e.g. site.conf → dep deploy site).
  */
 function register_client_host(string $confFile): bool
 {
@@ -53,8 +53,7 @@ function register_client_host(string $confFile): bool
     }
 
     // Private GitHub repos: rewrite host so ~/.ssh/config picks the per-domain key.
-    // Matches the rewrite in bin/lib.sh: github_repo_clone_url().
-    if ($domain && preg_match('/^git@github\.com:(.+)$/', $repo, $m)) {
+    if (preg_match('/^git@github\.com:(.+)$/', $repo, $m)) {
         $repo = 'git@github.com-' . $domain . ':' . $m[1];
     }
 
@@ -93,11 +92,28 @@ foreach ($confFiles as $confFile) {
 
 if ($hostsRegistered === 0) {
     throw new \RuntimeException(
-        'No deploy hosts registered — add bin/provision/clients/demo.conf (see _example.conf)'
+        'No deploy hosts registered — add bin/provision/clients/site.conf (see _example.conf)'
     );
 }
 
-// --- Tasks ---
+// ─── Tasks ────────────────────────────────────────────────────────────────
+
+task('deploy:app-key', function () {
+    $envPath = '{{deploy_path}}/shared/.env';
+    $exists = run("test -f {$envPath} && echo 1 || echo 0");
+
+    if (trim($exists) !== '1') {
+        return;
+    }
+
+    $noKey = run("grep -q '^APP_KEY=$' {$envPath} && echo 1 || echo 0");
+    if (trim($noKey) === '1') {
+        $key = trim(run('php {{release_path}}/artisan key:generate --show'));
+        run("echo 'APP_KEY={$key}' >> {$envPath}");
+        writeln('  <info>✓</info> Generated missing APP_KEY');
+    }
+});
+after('deploy:env', 'deploy:app-key');
 
 task('deploy:npm', function () {
     cd('{{release_path}}');
@@ -123,15 +139,4 @@ task('deploy:check', function () {
     run('./bin/check');
 });
 after('deploy:meta', 'deploy:check');
-
-task('deploy:app_key', function () {
-    $result = run('grep "^APP_KEY=.\\{30,\\}" {{deploy_path}}/shared/.env || true');
-    if (trim($result) === '') {
-        writeln("<comment>APP_KEY missing from shared/.env — generating...</comment>");
-        cd('{{release_path}}');
-        run('php artisan key:generate --force');
-        writeln("<info>APP_KEY generated</info>");
-    }
-});
-before('deploy:check', 'deploy:app_key');
 after('rollback', 'deploy:meta');
