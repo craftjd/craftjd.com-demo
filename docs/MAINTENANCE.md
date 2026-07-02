@@ -313,3 +313,17 @@ Provisioned automatically: `APP_KEY`, `MONITOR_KEY`, `APP_URL`. Never overwritte
 | `checks/db` | Database connection |
 | `checks/mail` | `CONTACT_EMAIL`; warns if `MAIL_MAILER=log` |
 | `checks/storage` | Writable storage paths |
+
+### Troubleshooting
+
+**`GET /` returns 500 after deploy but all infra checks pass.**
+Likely missing `APP_KEY` in `shared/.env`. The Deployer recipe checks this
+automatically now (`deploy:app_key` task), but can be fixed manually:
+```bash
+cd /var/www/DOMAIN/current
+php artisan key:generate --force
+php artisan config:clear && php artisan config:cache
+```
+This happens when `releases/` + `current/` are removed to force a fresh clone
+but `shared/.env` survives without a valid `APP_KEY`. The `deploy:app_key` task
+catches it before `deploy:check` runs on future deploys.
