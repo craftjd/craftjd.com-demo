@@ -65,6 +65,28 @@ class MainSiteJoesClient
         }
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function fetchCompleted(int $perPage = 20): array
+    {
+        $response = $this->request('GET', $this->endpoint('?per_page='.$perPage));
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'Main site completed requests fetch failed ('.$response->status().'): '.$response->body()
+            );
+        }
+
+        $payload = $response->json();
+
+        if (! is_array($payload) || ! isset($payload['data'])) {
+            throw new RuntimeException('Main site completed requests returned invalid JSON.');
+        }
+
+        return $payload['data'];
+    }
+
     private function endpoint(string $suffix): string
     {
         $base = config('joes.main_site_webhook_url');
