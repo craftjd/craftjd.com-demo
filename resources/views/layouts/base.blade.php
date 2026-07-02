@@ -35,6 +35,8 @@
         @endif
     </main>
     <x-footer />
+    <x-changelog-modal />
+    @yield('below_footer')
     @livewireScripts
 </body>
 

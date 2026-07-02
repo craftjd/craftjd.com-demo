@@ -613,4 +613,21 @@
   .error-page__actions {
     @apply mt-10 flex flex-wrap justify-center gap-4;
   }
+
+  .changelog-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .changelog-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .changelog-scroll::-webkit-scrollbar-thumb {
+    background-color: rgb(68 64 60 / 0.5);
+    border-radius: 2px;
+  }
+
+  .changelog-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(68 64 60 / 0.8);
+  }
 }
