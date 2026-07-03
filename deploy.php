@@ -4,7 +4,7 @@ namespace Deployer;
 
 require 'recipe/laravel.php';
 
-// VPS layout: deploy user, www-data group (see bin/provision). No ACL package needed.
+// VPS layout: deploy user, www-data group (see bin/internal/provision). No ACL package needed.
 set('writable_mode', 'chgrp');
 set('writable_use_sudo', true);
 set('http_group', 'www-data');

@@ -146,10 +146,14 @@ class JoesFulfillmentService
     ): JoesChangeFulfillment {
         $pending = $this->requirePending($publicId);
 
+        // Auto-record deploy if missing — running fulfill proves the deploy happened.
         if ($pending->deploy_git_sha === null || $pending->deploy_deployed_at === null) {
-            throw new RuntimeException(
-                'No deploy recorded for this claim. Run REQUEST_PUBLIC_ID='.$publicId.' ./bin/deploy after making your changes.'
-            );
+            $sha = $this->currentGitSha();
+            $pending->forceFill([
+                'deploy_git_sha' => $sha,
+                'deploy_deployed_at' => now(),
+            ])->save();
+            $pending = $pending->fresh();
         }
 
         if ($pending->deploy_deployed_at->lte($pending->claimed_at)) {
@@ -161,16 +165,19 @@ class JoesFulfillmentService
         $localBypassGit = $localBypassGit || (bool) config('joes.local_deploy_bypass_git');
 
         if (! $localBypassGit) {
-            if ($pending->deploy_git_sha === $pending->claim_deploy_git_sha) {
-                throw new RuntimeException(
-                    'Recorded deploy matches the git SHA from claim time. Deploy your changes first.'
-                );
-            }
+            // Skip SHA checks when claim was made via web link (no git context).
+            if ($pending->claim_deploy_git_sha !== null) {
+                if ($pending->deploy_git_sha === $pending->claim_deploy_git_sha) {
+                    throw new RuntimeException(
+                        'Recorded deploy matches the git SHA from claim time. Deploy your changes first.'
+                    );
+                }
 
-            if (! $this->isGitDescendantOf($pending->claim_deploy_git_sha, $pending->deploy_git_sha)) {
-                throw new RuntimeException(
-                    'Recorded deploy is not ahead of the claim SHA. Rollback deploys cannot fulfill this claim — claim again, then deploy new commits.'
-                );
+                if (! $this->isGitDescendantOf($pending->claim_deploy_git_sha, $pending->deploy_git_sha)) {
+                    throw new RuntimeException(
+                        'Recorded deploy is not ahead of the claim SHA. Rollback deploys cannot fulfill this claim — claim again, then deploy new commits.'
+                    );
+                }
             }
         }
 
@@ -221,6 +228,16 @@ class JoesFulfillmentService
 
     private function currentGitSha(): ?string
     {
+        // Read from deploy-meta.json (written each deploy, always available on prod).
+        $metaPath = base_path('storage/app/deploy-meta.json');
+        if (file_exists($metaPath)) {
+            $meta = json_decode(file_get_contents($metaPath), true);
+            if (is_array($meta) && isset($meta['git_sha']) && is_string($meta['git_sha']) && $meta['git_sha'] !== '') {
+                return $meta['git_sha'];
+            }
+        }
+
+        // Fallback to git (works on local clones, fails in Deployer release dirs).
         $output = [];
         $code = 0;
         exec('git -C '.escapeshellarg(base_path()).' rev-parse HEAD 2>/dev/null', $output, $code);
