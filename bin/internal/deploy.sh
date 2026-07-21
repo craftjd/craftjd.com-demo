@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+# shellcheck disable=SC1091
 source "$ROOT/bin/lib.sh"
 
 echo "==> deploy (production server)"
@@ -72,7 +73,8 @@ else
 fi
 
 echo ""
-echo "Deploy complete. Run: ./bin/check"
+echo "Deploy complete. Run: ./bin/internal/check.sh"
 if [[ -n "$REQUEST_PUBLIC_ID" ]]; then
-    echo "Next: ./bin/fulfill ${REQUEST_PUBLIC_ID} \"summary of changes\""
+    echo "Next: task claim:fulfill PUBLIC_ID=${REQUEST_PUBLIC_ID} SUMMARY=\"summary of changes\""
+    echo "  or: ./bin/internal/fulfill.sh ${REQUEST_PUBLIC_ID} \"summary of changes\""
 fi

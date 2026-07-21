@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
-    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 else
     BIN_ROOT="${SCRIPT_DIR}"
 fi
@@ -40,7 +40,7 @@ case "$CMD" in
 esac
 
 # Second positional arg: conf path (default: site.conf)
-CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
+CONF_FILE="${1:-${BIN_ROOT}/internal/provision/clients/site.conf}"
 [[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
 shift 2>/dev/null || true
 

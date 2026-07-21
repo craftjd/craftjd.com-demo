@@ -3,33 +3,38 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
-    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 else
     BIN_ROOT="${SCRIPT_DIR}"
 fi
 source "${BIN_ROOT}/lib.sh"
 
-TIER=""
+# Read config from .conf file (default: site.conf, override with a conf path).
+CONF_FILE="${1:-${BIN_ROOT}/internal/provision/clients/site.conf}"
+
+[[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
+# shellcheck disable=SC1090
+source "$CONF_FILE"
+shift 2>/dev/null || true   # consume the conf path arg
+
+confirm_destructive "Provision server: install packages, create deploy user, configure nginx/php/fail2ban/UFW" "${CONFIRM:-false}"
+
+[[ -n "${TIER:-}" ]] || fail "config must set TIER"
+validate_tier "$TIER"
 
 usage() {
     cat <<'EOF'
-Usage: server --tier=flat-file|app
+Usage: server [CONF_FILE]
 
 One-time VPS setup (Ubuntu 24.04). Run as root on a fresh Linode, or with sudo.
-
-  flat-file  nginx, PHP 8.3 + SQLite, Composer, Node, UFW
-  app        above + MySQL, Redis
-
-From laptop: ./bin/remote server CLIENT_NAME
+Reads TIER from the given .conf file (default: bin/provision/clients/site.conf).
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --tier=*) TIER="${1#*=}" ;;
-        --tier) TIER="${2:?}"; shift ;;
         -h | --help) usage; exit 0 ;;
-        *) fail "unknown argument: $1 (try --help)" ;;
+        *) fail "unknown argument: $1" ;;
     esac
     shift
 done
@@ -158,10 +163,10 @@ fi
 
 if [[ "${INVOKED_VIA_REMOTE:-}" != 1 ]]; then
     echo "From your laptop:"
-    echo "  ./bin/remote github-key CLIENT_NAME   # private GitHub repos"
-    echo "  ./bin/remote site CLIENT_NAME"
+    echo "  ./bin/remote github-key   # private GitHub repos"
+    echo "  ./bin/remote site"
     if [[ "$TIER" == "app" ]]; then
         echo
-        echo "App tier: set DB_NAME, DB_USER, DB_PASS in the client config (or pass --db-* flags)."
+        echo "App tier: set DB_NAME, DB_USER, DB_PASS in the client config."
     fi
 fi

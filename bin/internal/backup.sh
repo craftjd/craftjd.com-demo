@@ -217,11 +217,13 @@ backup_prune() {
         f="${all_backups[$i]}"
         [[ -n "${keep_set[$f]-}" ]] && continue
         ts="$(basename "$f" | sed 's/^[^-]*-//; s/\.tar\.gz$//')"
+        # Convert YYYYMMDD_HHMMSS to Unix timestamp for week calculation
         local date_part="${ts:0:8}"
         local week_key
         week_key="$(date -u -d "${date_part:0:4}-${date_part:4:2}-${date_part:6:2}" '+%G-W%V' 2>/dev/null)" || continue
         [[ -n "${weekly_seen[$week_key]-}" ]] && continue
         weekly_seen[$week_key]=1
+        # Count how many weekly we've kept so far
         local weekly_count=0
         for idx in "${!weekly_seen[@]}"; do weekly_count=$((weekly_count+1)); done
         (( weekly_count <= KEEP_WEEKLY )) && keep_set["$f"]=1
@@ -284,6 +286,7 @@ backup_list() {
         time_part="${ts:9:2}:${ts:11:2}:${ts:13:2}"
         size="$(du -h "$f" | cut -f1)"
 
+        # Age in days
         local file_epoch now_epoch diff_days
         file_epoch="$(date -u -d "${ts:0:4}-${ts:4:2}-${ts:6:2} ${ts:9:2}:${ts:11:2}:${ts:13:2}" '+%s' 2>/dev/null || echo 0)"
         now_epoch="$(date -u '+%s')"

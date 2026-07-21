@@ -10,7 +10,7 @@ step() { echo "  →  $1"; }
 
 # Local Sail: bin scripts use ./vendor/bin/sail artisan when vendor/bin/sail exists.
 # Production / plain PHP dev: uses host php artisan (Sail not in vendor with --no-dev).
-# Override: JOES_BIN_PHP=1 ./bin/fulfill …  forces host php even when Sail is present.
+# Override: JOES_BIN_PHP=1 ./bin/internal/fulfill.sh …  forces host php even when Sail is present.
 use_sail_artisan() {
     if [[ "${JOES_BIN_PHP:-}" == "1" ]]; then
         return 1
@@ -58,19 +58,19 @@ explain_joes_git_failure() {
     if [[ "$msg" == *"matches the SHA recorded at claim"* ]] \
         || [[ "$msg" == *"matches the git SHA from claim"* ]]; then
         echo "  hint: deploy SHA equals the SHA captured at claim time." >&2
-        echo "        Production: commit your edits, then REQUEST_PUBLIC_ID=… ./bin/deploy" >&2
-        echo "        Local dev:    REQUEST_PUBLIC_ID=… ./bin/deploy-local (no new commit required)" >&2
+        echo "        Production: commit your edits, then REQUEST_PUBLIC_ID=… ./bin/internal/deploy.sh" >&2
+        echo "        Local:        task claim:deploy-local PUBLIC_ID=… (no new commit required)" >&2
     fi
 
     if [[ "$msg" == *"not ahead of the claim SHA"* ]] \
         || [[ "$msg" == *"Rollback deploys"* ]]; then
         echo "  hint: deploy SHA is older than (or not descended from) the claim SHA." >&2
         echo "        Re-open the claim link after a rollback, then deploy forward commits." >&2
-        echo "        Local dev: REQUEST_PUBLIC_ID=… ./bin/deploy-local with JOES_LOCAL_DEPLOY_BYPASS_GIT=true in .env" >&2
+        echo "        Local: task claim:deploy-local PUBLIC_ID=… with JOES_LOCAL_DEPLOY_BYPASS_GIT=true in .env" >&2
     fi
 
     if [[ "$msg" == *"No deploy recorded for this claim"* ]]; then
-        echo "  hint: run REQUEST_PUBLIC_ID=… ./bin/deploy (production) or ./bin/deploy-local (local) before fulfill." >&2
+        echo "  hint: run REQUEST_PUBLIC_ID=… ./bin/internal/deploy.sh (production) or task claim:deploy-local (local) before fulfill." >&2
     fi
 
     if [[ "$msg" == *"No pending claim"* ]]; then
@@ -95,6 +95,18 @@ load_env_var() {
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "missing command: $1"
 }
+
+# Git Bash stores a passphrase-unlocked agent in ~/.ssh/environment (see ~/.bashrc).
+# PowerShell `task` → non-interactive bash skips .bashrc; load it here for SSH tasks.
+load_ssh_agent() {
+    local env_file="${HOME}/.ssh/environment"
+    if [[ -f "$env_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$env_file"
+    fi
+}
+
+load_ssh_agent
 
 # Write storage/app/deploy-meta.json with safe JSON encoding.
 # Expects env: GIT_SHA, DEPLOYED_AT, GIT_COMMIT_MESSAGE; optional REQUEST_ID, DEPLOY_SUMMARY.
@@ -290,9 +302,11 @@ require_sudo() {
 load_client_config() {
     local name="$1"
     local mode="${2:-site}"
-    local file="${BIN_ROOT}/provision/clients/${name}.conf"
+    local lib_dir
+    lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local file="${lib_dir}/internal/provision/clients/${name}.conf"
 
-    [[ -f "$file" ]] || fail "missing client config: ${file} (copy provision/clients/_example.conf)"
+    [[ -f "$file" ]] || fail "missing client config: ${file} (copy bin/internal/provision/clients/_example.conf)"
 
     # shellcheck disable=SC1090
     source "$file"
@@ -325,24 +339,6 @@ load_client_config() {
             fail "unknown client config mode: ${mode}"
             ;;
     esac
-}
-
-site_remote_extra_args() {
-    local args=()
-
-    if [[ "${SSL:-}" == true ]]; then
-        args+=(--ssl --cert-email="${CERT_EMAIL}")
-    fi
-
-    if [[ -n "${DB_NAME:-}" ]]; then
-        args+=(--db-name="${DB_NAME}" --db-user="${DB_USER}" --db-pass="${DB_PASS}")
-    fi
-
-    if [[ "${DEPLOY:-}" == true ]]; then
-        args+=(--deploy)
-    fi
-
-    echo "${args[@]}"
 }
 
 # Derive a deploy key name from the site domain.
@@ -420,10 +416,7 @@ github_repo_ssh_accessible() {
         git ls-remote --exit-code "$repo" HEAD &>/dev/null
 }
 
-# Return a git clone URL.
-#   - Public repos → HTTPS (anonymous, no key required).
-#   - Private repos → SSH with a <github.com-DOMAIN> host alias so the per-domain
-#     SSH config identity is selected automatically.
+# Use HTTPS for public GitHub repos so SSH deploy keys are not required.
 github_repo_clone_url() {
     local repo="$1"
     local domain="${2:-}"
@@ -433,8 +426,8 @@ github_repo_clone_url() {
         return 0
     fi
 
-    # Private repo — rewrite hostname so ~/.ssh/config picks the right key.
-    if [[ -n "$domain" && "$repo" =~ ^git@github\.com:(.+)$ ]]; then
+    # Private GitHub repo: inject domain alias so ~/.ssh/config selects the per-domain deploy key.
+    if [[ -n "$domain" ]] && [[ "$repo" =~ ^git@github\.com:(.+)$ ]]; then
         echo "git@github.com-${domain}:${BASH_REMATCH[1]}"
         return 0
     fi
@@ -567,6 +560,17 @@ client_env_collect_desired() {
     client_env_add_if_set _desired CHECK_URL "${CHECK_URL:-}"
 }
 
+# Apply client config values into a site .env (used by provision/site and env push).
+client_env_apply_to_file() {
+    local env_file="$1"
+    local -n _desired="$2"
+    local key
+
+    for key in $(client_env_sorted_keys "$2"); do
+        set_env_var "$key" "${_desired[$key]}" "$env_file"
+    done
+}
+
 client_env_sorted_keys() {
     local -n _desired="$1"
     printf '%s\n' "${!_desired[@]}" | sort
@@ -644,17 +648,6 @@ client_env_validate_mail_domain() {
     if [[ "$from_domain" != "$domain" && "$from_domain" != *".${domain}" ]]; then
         warn "MAIL_FROM_ADDRESS (${from}) is not on ${domain}"
     fi
-}
-
-# Apply client config values into a site .env (used by provision/site and env push).
-client_env_apply_to_file() {
-    local env_file="$1"
-    local -n _desired="$2"
-    local key
-
-    for key in $(client_env_sorted_keys "$2"); do
-        set_env_var "$key" "${_desired[$key]}" "$env_file"
-    done
 }
 
 # --- Deployer layout (/var/www/DOMAIN/{current,releases,shared,.dep}) ---

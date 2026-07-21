@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN_ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck disable=SC1091
-source "${BIN_ROOT}/lib.sh"
+source "${ROOT}/bin/lib.sh"
 
 cd "$ROOT"
 
@@ -12,11 +11,13 @@ require_artisan_runner
 
 usage() {
     echo "Usage:" >&2
-    echo "  ./bin/fulfill PUBLIC_ID \"summary of changes\"" >&2
+    echo "  ./bin/internal/fulfill.sh PUBLIC_ID \"summary of changes\"" >&2
+    echo "  task claim:fulfill PUBLIC_ID=… SUMMARY=\"…\"" >&2
     echo >&2
-    echo "Workflow:" >&2
+    echo "Workflow (run from the Joe's Cafe repo):" >&2
     echo "  1. Open the claim link from the main-site email (or: php artisan joes:claim PUBLIC_ID)" >&2
-    echo "  2. Edit Joe's Cafe, then REQUEST_PUBLIC_ID=… ./bin/deploy-local (Sail) or ./bin/deploy (server)" >&2
+    echo "  2. Edit Joe's Cafe, then task claim:deploy-local PUBLIC_ID=… (local)" >&2
+    echo "     or REQUEST_PUBLIC_ID=… ./bin/internal/deploy.sh (on Joe's server)" >&2
     echo "  3. Review the preview and choose Fulfill, Abandon, or Keep pending" >&2
     exit 1
 }

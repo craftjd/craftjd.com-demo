@@ -3,19 +3,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/../lib.sh" ]]; then
-    BIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    BIN_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 else
     BIN_ROOT="${SCRIPT_DIR}"
 fi
 source "${BIN_ROOT}/lib.sh"
 
 # Read config from .conf file (default: site.conf, override with a conf path).
-CONF_FILE="${1:-${BIN_ROOT}/provision/clients/site.conf}"
+CONF_FILE="${1:-${BIN_ROOT}/internal/provision/clients/site.conf}"
 
 [[ -f "$CONF_FILE" ]] || fail "missing config: ${CONF_FILE}"
 # shellcheck disable=SC1090
 source "$CONF_FILE"
-shift 2>/dev/null || true
+shift || true   # consume the conf path arg; extra args (e.g. --fresh) remain in $@
 
 require_sudo
 
@@ -38,10 +38,28 @@ RELEASE_DIR="${SITE_DIR}/releases/1"
 SHARED_ENV="$(site_env_file "$SITE_DIR")"
 DOCUMENT_ROOT="${SITE_DIR}/current/public"
 
-if [[ -d "$SITE_DIR" ]]; then
+# Parse extra flags
+SITE_FRESH=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --fresh) SITE_FRESH=true ;;
+        *) break ;;
+    esac
+    shift
+done
+
+if [[ "$SITE_FRESH" == true && -d "$SITE_DIR" ]]; then
+    echo "==> fresh provision (tier=${TIER}, domain=${DOMAIN}, config=${CONF_FILE})"
+    echo "  -> found existing site at ${SITE_DIR}"
+    confirm_destructive "Wipe ${SITE_DIR} and provision from scratch (all data will be lost)" "${CONFIRM:-false}"
+    sudo_cmd rm -rf "$SITE_DIR"
+    UPDATE_MODE=false
+elif [[ -d "$SITE_DIR" ]]; then
     UPDATE_MODE=true
     echo "==> re-provision site (tier=${TIER}, domain=${DOMAIN}, config=${CONF_FILE})"
-    ok "${SITE_DIR} exists — running in update mode (nginx, certbot, permissions, .env)"
+    echo "  -> found existing site at ${SITE_DIR}"
+    echo "  -> running in update mode: nginx, certbot, permissions, .env (current release untouched)"
+    confirm_destructive "Re-provision ${DOMAIN}: nginx config, certbot, permissions, .env sync" "${CONFIRM:-false}"
 else
     UPDATE_MODE=false
     echo "==> provision site (tier=${TIER}, domain=${DOMAIN}, config=${CONF_FILE})"
@@ -58,11 +76,11 @@ if [[ "$UPDATE_MODE" == false ]]; then
     mkdir -p "${SITE_DIR}/releases" "${SITE_DIR}/shared" "${SITE_DIR}/.dep" "${SITE_DIR}/shared/database"
 
     CLONE_URL="$(github_repo_clone_url "$REPO" "$DOMAIN")"
-    require_github_repo_access "$REPO" "$DOMAIN"
+    require_github_repo_access "$REPO"
 
     ok "cloning ${CLONE_URL} → releases/1"
-    if ! git clone "$CLONE_URL" "$RELEASE_DIR"; then
-        fail "git clone failed — see MAINTENANCE.md -> Private GitHub repos"
+    if ! GIT_TERMINAL_PROMPT=0 git clone "$CLONE_URL" "$RELEASE_DIR"; then
+        fail "git clone failed — add the deploy key to the GitHub repo first (Settings > Deploy keys), then re-run"
     fi
     cd "$RELEASE_DIR"
 
@@ -116,6 +134,11 @@ if [[ "$UPDATE_MODE" == false ]]; then
     php artisan key:generate --force
 
     deployer_adopt_release "$SITE_DIR" "$RELEASE_DIR" "$TIER"
+
+    # First-time cleanup: remove conflicting Deployer artifacts so it can
+    # create releases/1 cleanly on the first deploy (task deploy).
+    ok "cleaning up deployer artifacts for first deploy"
+    rm -rf "$RELEASE_DIR" "${SITE_DIR}/current" "${SITE_DIR}/.dep/releases" "${SITE_DIR}/.dep/metadata"
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Update mode: ensure shared dirs exist, no destructive steps
@@ -182,6 +205,5 @@ else
     echo "MONITOR_KEY=${MONITOR_KEY}"
     echo
     echo "Next:"
-    echo "  ./bin/remote env check   # verify shared/.env matches client config"
     echo "  task deploy              # first atomic deploy"
 fi

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+# shellcheck disable=SC1091
 source "$ROOT/bin/lib.sh"
 
 echo "==> deploy-local"
@@ -20,7 +21,7 @@ require_artisan_runner
 REQUEST_PUBLIC_ID="${REQUEST_PUBLIC_ID:-}"
 
 if [[ -z "$REQUEST_PUBLIC_ID" ]]; then
-    fail "REQUEST_PUBLIC_ID is required. Example: REQUEST_PUBLIC_ID=01920e1a-… ./bin/deploy-local"
+    fail "REQUEST_PUBLIC_ID is required. Example: REQUEST_PUBLIC_ID=01920e1a-… ./bin/internal/deploy-local.sh (or: task claim:deploy-local PUBLIC_ID=…)"
 fi
 
 step "read git HEAD (stand-in deploy SHA for this run)"
@@ -46,4 +47,4 @@ ok "claim row updated (${GIT_SHA:0:7}, local git bypass)"
 
 echo ""
 echo "Deploy-local complete."
-echo "Next: ./bin/fulfill ${REQUEST_PUBLIC_ID} \"summary of changes\""
+echo "Next: task claim:fulfill PUBLIC_ID=${REQUEST_PUBLIC_ID} SUMMARY=\"summary of changes\""

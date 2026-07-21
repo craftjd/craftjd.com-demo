@@ -8,6 +8,10 @@ require 'recipe/laravel.php';
 set('writable_mode', 'chgrp');
 set('writable_use_sudo', true);
 set('http_group', 'www-data');
+// ControlMaster sockets are unreliable on Windows/MSYS Git Bash OpenSSH.
+set('ssh_multiplexing', false);
+set('ssh_arguments', ['-o ControlMaster=no', '-o ControlPath=none', '-o ControlPersist=no']);
+set('identity_file', '~/.ssh/id_rsa');
 
 /**
  * Parse a CLIENT.conf file into key => value (same rules as bash source).
@@ -66,6 +70,7 @@ function register_client_host(string $confFile): bool
         ->setHostname($ip)
         ->setRemoteUser('deploy')
         ->setPort(22)
+        ->setSshMultiplexing(false)
         ->setDeployPath('/var/www/' . $domain)
         ->set('branch', $config['DEPLOY_BRANCH'] ?? 'main')
         ->set('keep_releases', 2)
@@ -76,7 +81,7 @@ function register_client_host(string $confFile): bool
     return true;
 }
 
-$clientsDir = __DIR__ . '/bin/provision/clients';
+$clientsDir = __DIR__ . '/bin/internal/provision/clients';
 $confFiles = glob($clientsDir . '/*.conf') ?: [];
 
 if ($confFiles === []) {
@@ -92,7 +97,7 @@ foreach ($confFiles as $confFile) {
 
 if ($hostsRegistered === 0) {
     throw new \RuntimeException(
-        'No deploy hosts registered — add bin/provision/clients/site.conf (see _example.conf)'
+        'No deploy hosts registered — add bin/internal/provision/clients/site.conf (see _example.conf)'
     );
 }
 
@@ -150,7 +155,7 @@ after('deploy:success', 'deploy:meta');
 
 task('deploy:check', function () {
     cd('{{release_path}}');
-    run('./bin/check');
+    run('CHECK_URL=http://127.0.0.1 ./bin/internal/check.sh');
 });
 after('deploy:meta', 'deploy:check');
 after('rollback', 'deploy:meta');

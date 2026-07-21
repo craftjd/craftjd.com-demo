@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BIN_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ROOT="$(cd "${BIN_ROOT}/.." && pwd)"
 cd "$ROOT"
 
@@ -33,7 +33,7 @@ ok "/sitemap.xml"
 MONITOR_KEY="$(load_env_var MONITOR_KEY)"
 if [[ -n "$MONITOR_KEY" ]]; then
     health_tmp="$(mktemp)"
-    health_code="$(curl -sS -o "$health_tmp" -w "%{http_code}" \
+    health_code="$(curl -sS -L -o "$health_tmp" -w "%{http_code}" \
         -H "X-Monitor-Key: ${MONITOR_KEY}" "${BASE_URL}/health" || true)"
     if [[ "$health_code" == "200" ]]; then
         ok "/health"

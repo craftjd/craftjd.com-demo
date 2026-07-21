@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BIN_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ROOT="$(cd "${BIN_ROOT}/.." && pwd)"
 cd "$ROOT"
 
