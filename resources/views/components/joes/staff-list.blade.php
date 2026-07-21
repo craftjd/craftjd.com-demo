@@ -16,7 +16,7 @@
             $avatar = $avatarMap[$character] ?? 'manager';
         @endphp
         <li class="staff-list__item">
-            <div class="staff-caricature" role="img" aria-label="Illustrated portrait of {{ $member['name'] }}">
+            <div class="staff-caricature" role="img" aria-label="Role icon for {{ $member['name'] }}">
                 <img
                     src="{{ asset('avatars/'.$avatar.'.svg') }}"
                     alt=""

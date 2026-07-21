@@ -75,7 +75,7 @@ class HomePageTest extends TestCase
             ->assertHasErrors(['name', 'email', 'phone', 'pickup_time', 'order_details'])
             ->set('name', 'Sam Guest')
             ->set('email', 'sam@example.com')
-            ->set('phone', '555-014-0000')
+            ->set('phone', '416-555-0199')
             ->set('pickup_time', 'Today at 9am')
             ->set('order_details', 'Large drip and a morning bun')
             ->call('submit')

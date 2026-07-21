@@ -1,14 +1,20 @@
 {
-  "intro": "Unsolicited. Unpaid. Mostly accurate.",
+  "intro": "Unsolicited. Unpaid. Mostly accurate. Including the one we framed.",
   "featured": {
-    "quote": "Best cortado I've had outside the city. No attitude with it.",
-    "author": "R.T.",
-    "context": "Regular, mornings",
-    "rating": 5
+    "quote": "Asked for pumpkin spice. They said no. Came back the next week. Still no. Hostile environment.",
+    "author": "Brenda K.",
+    "context": "Google review — 1 star, and we kept it",
+    "rating": 1
   },
   "items": [
     {
-      "quote": "They ran out of buns at 1pm and told me straight. I respect that more than a rain check.",
+      "quote": "Best cortado I've had outside the city. Quiet place, no fuss.",
+      "author": "R.T.",
+      "context": "Regular, mornings",
+      "rating": 5
+    },
+    {
+      "quote": "Came for a sandwich at lunch and they were already out — said so right away. Coffee was still worth the stop.",
       "author": "Dana M.",
       "context": "First visit",
       "rating": 5
@@ -20,15 +26,9 @@
       "rating": 4
     },
     {
-      "quote": "My kid likes the hot chocolate. I like that nobody tried to upsell me a size I didn't ask for.",
+      "quote": "I'm here for the oat latte. Appreciate that nobody tried to upsell me a size I didn't ask for.",
       "author": "Helen W.",
       "context": "Weekends",
-      "rating": 5
-    },
-    {
-      "quote": "Pour-over was ready in six minutes and they didn't act like I was asking for a favor.",
-      "author": "Marcus L.",
-      "context": "Afternoon drop-in",
       "rating": 5
     }
   ]

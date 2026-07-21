@@ -1,19 +1,19 @@
 {
   "headline": "Find the shop",
-  "intro": "We're on Ridge Line Road — the county highway most map apps label wrong. Look for the green awning and the smell of roast.",
+  "intro": "We're up Summit Ridge Road — above the village, past the point where your calves file a complaint. Look for the green awning and the smell of roast. We'll have something warm ready when you catch your breath.",
   "directions": [
     {
-      "title": "From the highway",
-      "text": "Exit at Mile Marker 14, north on Ridge Line 2.4 miles. We're on the left after the gravel pull-off — white building, pine-green awning."
+      "title": "From the Trans-Canada",
+      "text": "Take the Lake Louise exit, then climb. And climb. Summit Ridge is 2.4 km of switchbacks that feel personally motivated. We're on the left after the gravel pull-off — white building, pine-green awning, oxygen optional."
     },
     {
       "title": "Parking",
-      "text": "Street spots out front. Small lot behind the building if the front is full — alley access between the hardware store and us."
+      "text": "A few spots out front, small lot behind if those are gone. Same rule as the lakeshore lot in July: show up after 8am and you're riding the Parks Canada shuttle with everyone else who also 'just wanted a quick walk around the lake.'"
     },
     {
       "title": "When GPS fails",
-      "text": "Call us. Seriously. Half our first-timers call from the gravel pull-off. We don't mind."
+      "text": "It will. Call us from whichever hairpin just broke your spirit — half our first-timers do. We keep the kettle on."
     }
   ],
-  "map_label": "214 Ridge Line Rd"
+  "map_label": "214 Summit Ridge Rd"
 }
