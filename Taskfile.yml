@@ -6,7 +6,16 @@ vars:
   CLIENT: site
 
 tasks:
-  setup:
+  test:
+    desc: Alias for dev:test (used by composer test)
+    cmds:
+      - task: dev:test
+
+  # ─── Dev — local WSL operations ─────────────────────────────────────────
+  # On Windows PowerShell, shell scripts must be invoked via `bash` (task cannot
+  # fork/exec .sh directly: "%1 is not a valid Win32 application").
+  # Remote SSH tasks also load ~/.ssh/environment via bin/lib.sh (Git Bash agent).
+  dev:setup:
     desc: First-time project setup
     cmds:
       - composer install
@@ -18,110 +27,219 @@ tasks:
       - npm run build
 
   dev:
-    desc: Start all dev services
+    desc: Start all dev services (serve + queue + pail + vite)
     cmds:
       - concurrently "php artisan serve" "php artisan queue:listen" "php artisan pail" "npm run dev"
 
-  # ─── Tests ────────────────────────────────────────────────────────────────
-  test:
-    desc: Run full PHPUnit test suite
+  # ─── Tests ──────────────────────────────────────────────────────────────
+  # Day-to-day: Unit+Feature (sqlite :memory:, faked mail/cache). No live site.
+
+  dev:test:
+    desc: "Unit + Feature (hermetic)"
     cmds:
       - php artisan config:clear
-      - php artisan test
+      - php artisan test --testsuite=Unit,Feature
 
-  test:fast:
+  dev:test:unit:
+    desc: Run Unit tests only
+    cmds:
+      - php artisan test --testsuite=Unit
+
+  dev:test:feature:
+    desc: Run Feature tests only
+    cmds:
+      - php artisan test --testsuite=Feature
+
+  dev:test:fast:
     desc: Run tests without config:clear (faster for tight loops)
     cmds:
       - php artisan test
 
-  test:joes:
-    desc: Run all Joe's pipeline tests (group=joes)
-    cmds:
-      - php artisan config:clear
-      - php artisan test --group=joes
-
-  test:joes:happy:
-    desc: Run the full happy-path pipeline end-to-end
-    cmds:
-      - php artisan config:clear
-      - php artisan test --filter="test_happy_path_full_pipeline" tests/Feature/JoesFulfillmentTest.php
-
-  test:file:
+  dev:test:file:
     desc: Run a single test file (FILE=tests/Feature/...)
+    requires:
+      vars: [FILE]
     cmds:
       - php artisan config:clear
       - php artisan test {{.FILE}}
 
-  check:
-    desc: Run health checks
+  dev:test:group:
+    desc: "Filter by PHPUnit group (GROUP=joes|…)"
+    requires:
+      vars: [GROUP]
     cmds:
-      - ./bin/check
+      - php artisan config:clear
+      - php artisan test --group={{.GROUP}}
 
-  fulfill:
-    desc: Mark a Joe's request fulfilled (PUBLIC_ID=xxx SUMMARY="description")
+  # Joe's Cafe claim/fulfill PHPUnit group (run FROM this repo)
+  claim:test:
+    desc: "[Joe's repo] Run all Joe's pipeline PHPUnit tests (group=joes)"
+    cmds:
+      - php artisan config:clear
+      - php artisan test --group=joes
+
+  claim:test:happy:
+    desc: "[Joe's repo] Run the full happy-path pipeline feature test"
+    cmds:
+      - php artisan config:clear
+      - php artisan test --filter="test_happy_path_full_pipeline" tests/Feature/JoesFulfillmentTest.php
+
+  dev:check:
+    desc: Run local live-site health checks (requires web server up)
+    cmds:
+      - bash ./bin/internal/check.sh
+
+  # ─── Dev — local ops (seed) ─────────────────────────────────────────────
+  # (dev:setup / dev above; joes tasks below)
+  dev:seed:
+    desc: Seed the local database
+    cmds:
+      - php artisan db:seed
+
+  # ─── Claim workflow — run FROM the Joe's Cafe repo only ─────────────────
+  # Main-site (craftjd) hub ops use a different namespace: hub:* there.
+  # Artisan commands on this app remain joes:* (Laravel), e.g. php artisan joes:fulfill.
+
+  claim:deploy-local:
+    desc: "[Joe's repo] Record local deploy on a claim (PUBLIC_ID=xxx). Skips pull/build/migrate."
     requires:
       vars: [PUBLIC_ID]
     cmds:
-      - ./bin/fulfill {{.PUBLIC_ID}} "{{.SUMMARY}}"
+      - REQUEST_PUBLIC_ID={{.PUBLIC_ID}} bash ./bin/internal/deploy-local.sh
 
-  # ─── Deploy / rollback (remote via Deployer SSH) ─────────────────────────
-  deploy:
-    desc: Deploy to production (CLIENT=demo matches demo.conf host name)
+  claim:fulfill:
+    desc: "[Joe's repo] Fulfill a claim (PUBLIC_ID=xxx SUMMARY=\"…\"). Interactive confirm."
+    requires:
+      vars: [PUBLIC_ID, SUMMARY]
+    stdin: true
     cmds:
-      - vendor/bin/dep deploy {{.CLIENT}}
+      - bash ./bin/internal/fulfill.sh "{{.PUBLIC_ID}}" "{{.SUMMARY}}"
+
+  claim:abandon:
+    desc: "[Joe's repo] Abandon a claim (PUBLIC_ID=xxx). Interactive confirm."
+    requires:
+      vars: [PUBLIC_ID]
+    stdin: true
+    cmds:
+      - bash ./bin/internal/abandon.sh {{.PUBLIC_ID}}
+
+  # ─── Deploy — via Deployer SSH (local machine only) ─────────────────────
+  deploy:
+    desc: "Deploy to production (CLIENT={{.CLIENT}})"
+    cmds:
+      - bash ./bin/internal/dep.sh deploy {{.CLIENT}}
 
   deploy:unlock:
-    desc: Clear a stale Deployer lock after a failed deploy
+    desc: Clear a stale Deployer lock
     cmds:
-      - vendor/bin/dep deploy:unlock {{.CLIENT}}
+      - bash ./bin/internal/dep.sh deploy:unlock {{.CLIENT}}
 
   rollback:
     desc: Roll back to previous release
     cmds:
-      - vendor/bin/dep rollback {{.CLIENT}}
+      - bash ./bin/internal/dep.sh rollback {{.CLIENT}}
 
-  # ─── Provisioning (one-time per server, via bin/remote SSH) ──────────────
+  # ─── Provision — one-time VPS setup (local machine only) ────────────────
   provision:server:
-    desc: Provision a new VPS (CLIENT=demo)
+    desc: "Provision a new VPS (CLIENT={{.CLIENT}})"
+    stdin: true
     cmds:
-      - ./bin/remote server {{.CLIENT}}
+      # First-time: CONFIRM=true task provision:server  (bypass interactive prompt)
+      # Interactive: task provision:server               (prompts via SSH -t)
+      - bash ./bin/internal/remote.sh server {{.CLIENT}}
 
   provision:github-key:
-    desc: Generate GitHub deploy key on VPS
+    desc: "Generate GitHub deploy key on VPS (CLIENT={{.CLIENT}})"
     cmds:
-      - ./bin/remote github-key {{.CLIENT}}
+      - bash ./bin/internal/remote.sh github-key {{.CLIENT}}
 
   provision:site:
-    desc: Set up site on provisioned VPS
+    desc: "Set up site on provisioned VPS (CLIENT={{.CLIENT}})"
+    stdin: true
     cmds:
-      - ./bin/remote site {{.CLIENT}}
+      # First-time (fresh server): CONFIRM=true task provision:site
+      # Re-run (update nginx/certbot/env): prompts for confirmation
+      - bash ./bin/internal/remote.sh site {{.CLIENT}}
+
+  provision:site-fresh:
+    desc: "Wipe existing site and provision from scratch (CLIENT={{.CLIENT}})"
+    stdin: true
+    cmds:
+      # Destructive: removes /var/www/DOMAIN and provisions fresh
+      # Prompts for confirmation (use CONFIRM=true to bypass)
+      - bash ./bin/internal/remote.sh site {{.CLIENT}} --fresh
 
   provision:env:
-    desc: Sync .env from client config to server
+    desc: "Sync .env from client config to server (CLIENT={{.CLIENT}})"
     cmds:
-      - ./bin/remote env {{.CLIENT}} push
+      - bash ./bin/internal/remote.sh env {{.CLIENT}} push
 
   provision:all:
-    desc: Full provision chain (server -> github-key -> site -> env push)
+    desc: "Full provision chain: server → github-key → site → env (CLIENT={{.CLIENT}})"
     deps: [provision:server, provision:github-key, provision:site, provision:env]
 
-  # ─── Backup / restore (via bin/remote SSH) ──────────────────────────────
+  # ─── Backup / restore (local machine only) ──────────────────────────────
   backup:create:
-    desc: Create a backup on the server (config, database, user uploads, logs)
+    desc: "Create a backup on the server (CLIENT={{.CLIENT}})"
     cmds:
-      - ./bin/remote backup {{.CLIENT}} create
+      - bash ./bin/internal/remote.sh backup {{.CLIENT}} create
 
   backup:list:
-    desc: List available backups with dates, sizes, and ages
+    desc: "List available backups (CLIENT={{.CLIENT}})"
     cmds:
-      - ./bin/remote backup {{.CLIENT}} list
+      - bash ./bin/internal/remote.sh backup {{.CLIENT}} list
 
   backup:restore:
-    desc: Restore from a backup — run without args for interactive picker, or pass BACKUP=ID
+    desc: "Restore from a backup — omit BACKUP for interactive picker (CLIENT={{.CLIENT}})"
     cmds:
-      - ./bin/remote backup {{.CLIENT}} restore {{.BACKUP}}
+      - bash ./bin/internal/remote.sh backup {{.CLIENT}} restore {{.BACKUP}}
 
   backup:cron:
-    desc: Install daily backup cron (2:00 AM) on the VPS for this CLIENT
+    desc: "Install daily backup cron on VPS (CLIENT={{.CLIENT}})"
     cmds:
-      - ./bin/remote backup-cron {{.CLIENT}}
+      - bash ./bin/internal/remote.sh backup-cron {{.CLIENT}}
+
+  # ─── Site — remote management via Deployer SSH (local machine only) ─────
+  site:check:
+    desc: "Run health checks on server (CLIENT={{.CLIENT}})"
+    cmds:
+      - bash ./bin/internal/dep.sh deploy:check {{.CLIENT}}
+
+  site:migrate:
+    desc: "Run migrations on server (CLIENT={{.CLIENT}})"
+    cmds:
+      - bash ./bin/internal/dep.sh artisan:migrate {{.CLIENT}}
+
+  site:seed:
+    desc: "Seed database on server (CLIENT={{.CLIENT}})"
+    cmds:
+      - bash ./bin/internal/dep.sh artisan:db:seed {{.CLIENT}}
+
+  site:config-clear:
+    desc: "Clear config cache on server (CLIENT={{.CLIENT}})"
+    cmds:
+      - bash ./bin/internal/dep.sh artisan:config:clear {{.CLIENT}}
+
+  site:config-cache:
+    desc: "Cache config on server (CLIENT={{.CLIENT}})"
+    cmds:
+      - bash ./bin/internal/dep.sh artisan:config:cache {{.CLIENT}}
+
+  site:down:
+    desc: "Put site in maintenance mode (CLIENT={{.CLIENT}})"
+    cmds:
+      # Server equivalent: php artisan down
+      - bash ./bin/internal/dep.sh artisan:down {{.CLIENT}}
+
+  site:up:
+    desc: "Bring site out of maintenance mode (CLIENT={{.CLIENT}})"
+    cmds:
+      # Server equivalent: php artisan up
+      - bash ./bin/internal/dep.sh artisan:up {{.CLIENT}}
+
+  site:migrate-domain:
+    desc: "Copy DB, storage, APP_KEY from old domain to new after re-provision (CLIENT={{.CLIENT}}, OLD_DOMAIN=xxx)"
+    requires:
+      vars: [OLD_DOMAIN]
+    cmds:
+      - bash ./bin/internal/site-migrate-domain.sh {{.OLD_DOMAIN}}
