@@ -128,7 +128,7 @@ Edit and commit as needed:
 
 - `config/client.php` — name, nav, SEO
 - `resources/content/*.md` or `resources/views/pages/*.blade.php` — pages
-- `storage/app/private/data/*.json` — table data (brochure tier)
+- `resources/content/data/*.json` — brochure table data (ships with each deploy)
 
 Push to the client repo when ready.
 
@@ -288,11 +288,12 @@ Then deploy on the server as usual.
 ### Code layout
 
 ```
-pages/{slug}.blade.php   → hand-built (wins)
-content/{slug}.md        → markdown fallback
-storage/app/private/data/{name}.json
-config/client.php        → nav, SEO, site name
-app/Starter/             → platform (merge from starter)
+pages/{slug}.blade.php            → hand-built (wins)
+content/{slug}.md                 → markdown fallback
+content/data/{name}.json          → brochure JSON (release content)
+storage/…                         → shared runtime (uploads, deploy-meta, logs)
+config/client.php                 → nav, SEO, site name
+app/Starter/                      → platform (merge from starter)
 ```
 
 Contact form: `pages/contact` → `Livewire/ContactForm` → mail to `CONTACT_EMAIL`.

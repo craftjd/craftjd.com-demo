@@ -24,6 +24,9 @@ return [
     |   1. resources/views/pages/{slug}.blade.php  (hand-built, primary)
     |   2. resources/content/{slug}.md             (markdown fallback)
     |
+    | Brochure JSON lives alongside at resources/content/data/{name}.json
+    | (see starter.data.path). Runtime files stay under storage/.
+    |
     | Disable flat_file_content to serve Blade pages only.
     |
     */
@@ -54,15 +57,18 @@ return [
     | Flat-File Data
     |--------------------------------------------------------------------------
     |
-    | Structured JSON for tables, listings, etc. Stored outside the public web
-    | root at storage/app/private/data/{name}.json
+    | Structured JSON for brochure tables/listings. Ships with the release
+    | (not shared storage) so deploys overwrite content intentionally.
     |
+    |   resources/content/data/{name}.json
     |   FlatFileStore::all('{name}')
+    |
+    | Runtime / app-written files stay under storage/ (shared across deploys).
     |
     */
 
     'data' => [
-        'path' => storage_path('app/private/data'),
+        'path' => resource_path('content/data'),
     ],
 
     /*
