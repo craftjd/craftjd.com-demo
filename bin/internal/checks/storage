@@ -13,8 +13,9 @@ ok "storage writable"
 [[ -w bootstrap/cache ]] || fail "bootstrap/cache is not writable"
 ok "bootstrap/cache writable"
 
-DATA_DIR="storage/app/private/data"
-if [[ -d "$DATA_DIR" ]]; then
-    [[ -w "$DATA_DIR" ]] || fail "${DATA_DIR} is not writable"
-    ok "${DATA_DIR} writable"
+# Runtime private dir (uploads, etc.) — brochure JSON lives in resources/content/data
+PRIVATE_DIR="storage/app/private"
+if [[ -d "$PRIVATE_DIR" ]]; then
+    [[ -w "$PRIVATE_DIR" ]] || fail "${PRIVATE_DIR} is not writable"
+    ok "${PRIVATE_DIR} writable"
 fi

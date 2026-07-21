@@ -62,7 +62,7 @@ fi
 #   .env
 #   database.sqlite  (flat-file)  or  mysql-dump.sql  (app)
 #   storage/public/             ← storage/app/public (user uploads)
-#   storage/private/            ← storage/app/private (non-public user assets)
+#   storage/private/            ← storage/app/private (runtime uploads; brochure JSON is in resources/content/data)
 #   storage/logs/               ← deploy output, contact form submissions, etc.
 
 backup_create() {
@@ -118,7 +118,8 @@ backup_create() {
         fi
     fi
 
-    # --- User uploads & content (storage/app/public + storage/app/private) ---
+    # --- User uploads (storage/app/public + storage/app/private) ---
+    # Brochure JSON ships in resources/content/data (release), not here.
     local storage_base="${shared_root}/storage/app"
     if [[ -d "${storage_base}/public" ]]; then
         ok "capturing storage/public"
