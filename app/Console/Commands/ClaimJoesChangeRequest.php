@@ -42,10 +42,10 @@ class ClaimJoesChangeRequest extends Command
 
         $this->components->info("Claimed main-site request #{$claim->main_request_id}.");
         $this->line('Public ID: '.$claim->main_request_public_id);
-        $this->line('Next: edit Joe\'s, then REQUEST_PUBLIC_ID='.$publicId.' ./bin/deploy');
-        $this->line('Local dev: REQUEST_PUBLIC_ID='.$publicId.' ./bin/deploy-local');
-        $this->line('Then: ./bin/fulfill '.$publicId.' "summary of changes"');
-        $this->line('Mistake? ./bin/abandon '.$publicId);
+        $this->line('Next: edit Joe\'s, then REQUEST_PUBLIC_ID='.$publicId.' ./bin/internal/deploy.sh');
+        $this->line('Local: task claim:deploy-local PUBLIC_ID='.$publicId);
+        $this->line('Then: task claim:fulfill PUBLIC_ID='.$publicId.' SUMMARY="summary of changes"');
+        $this->line('Mistake? task claim:abandon PUBLIC_ID='.$publicId);
 
         return self::SUCCESS;
     }

@@ -48,7 +48,7 @@ class RecordJoesDeploy extends Command
             $this->line('Local mode: git descendant checks were skipped.');
         }
 
-        $this->line('Next: ./bin/fulfill '.$publicId.' "summary of changes"');
+        $this->line('Next: task claim:fulfill PUBLIC_ID='.$publicId.' SUMMARY="summary of changes"');
 
         return self::SUCCESS;
     }

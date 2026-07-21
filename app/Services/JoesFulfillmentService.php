@@ -158,7 +158,7 @@ class JoesFulfillmentService
 
         if ($pending->deploy_deployed_at->lte($pending->claimed_at)) {
             throw new RuntimeException(
-                'Recorded deploy predates this claim. Run REQUEST_PUBLIC_ID='.$publicId.' ./bin/deploy after claiming.'
+                'Recorded deploy predates this claim. Run REQUEST_PUBLIC_ID='.$publicId.' ./bin/internal/deploy.sh after claiming.'
             );
         }
 

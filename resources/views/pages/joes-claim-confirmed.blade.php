@@ -15,9 +15,9 @@
         </p>
         <ol class="type-body mt-8 m-0 grid list-decimal gap-3 ps-5">
             <li>Edit Joe's Cafe for this request.</li>
-            <li>Deploy with <code>REQUEST_PUBLIC_ID={{ $publicId }} ./bin/deploy</code>.</li>
-            <li>Verify the live site, then run <code>./bin/fulfill {{ $publicId }} "summary of changes"</code>.</li>
-            <li>Wrong request? <code>./bin/abandon {{ $publicId }}</code></li>
+            <li>Deploy with <code>REQUEST_PUBLIC_ID={{ $publicId }} ./bin/internal/deploy.sh</code> (on Joe's server), or locally <code>task claim:deploy-local PUBLIC_ID={{ $publicId }}</code>.</li>
+            <li>Verify the live site, then run <code>task claim:fulfill PUBLIC_ID={{ $publicId }} SUMMARY="summary of changes"</code>.</li>
+            <li>Wrong request? <code>task claim:abandon PUBLIC_ID={{ $publicId }}</code></li>
         </ol>
     </div>
 @endsection
