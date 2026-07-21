@@ -6,6 +6,15 @@ Cross-site identity uses a **`public_id` UUID** on each main-site request. Displ
 
 Joe's stores **no client PII** (name, email, request body). That data is fetched from the main site at fulfill/abandon time and shown in the terminal only.
 
+### Where to run Task commands
+
+| You are in… | Task namespace | Purpose |
+|-------------|---------------|---------|
+| **Joe's Cafe repo** (`joes`) | `claim:*` | Work a claimed request on this site (deploy-local, fulfill, abandon) |
+| **Main site repo** (`craftjd`) | `hub:*` | Operator tools against the main-site API / SSH (list, prune, undo, webhook helpers) |
+
+Laravel artisan commands stay `joes:*` on both apps (e.g. `php artisan joes:fulfill`). Do not confuse those with Task namespaces.
+
 ---
 
 ## Shared configuration
@@ -87,27 +96,31 @@ Joe's stores only:
 - `claimed_at`, `claim_deploy_git_sha`
 - deploy + fulfill metadata
 
-### 3. You edit and deploy (Joe's)
+### 3. You edit and deploy (Joe's Cafe repo)
+
+On the Joe's **server** (after code is already released, or for legacy in-place deploy):
 
 ```bash
-REQUEST_PUBLIC_ID=01920e1a-… ./bin/deploy
+REQUEST_PUBLIC_ID=01920e1a-… ./bin/internal/deploy.sh
 ```
 
 Local parallel testing (app already running):
 
-```bash
-REQUEST_PUBLIC_ID=01920e1a-… ./bin/deploy-local
+```powershell
+task claim:deploy-local PUBLIC_ID=01920e1a-…
 ```
 
 Optional `REQUEST_NUMBER=42` sets the display number in `deploy-meta.json` changelog only.
 
 Fulfillment validates the **DB claim row**, not `deploy-meta.json` (footer changelog + `/health` only).
 
-### 4. You finalize (Joe's)
+### 4. You finalize (Joe's Cafe repo)
 
-```bash
-./bin/fulfill {public_id} "Updated summer hours on the contact section."
+```powershell
+task claim:fulfill PUBLIC_ID={public_id} SUMMARY="Updated summer hours on the contact section."
 ```
+
+Or: `./bin/internal/fulfill.sh {public_id} "Updated summer hours on the contact section."`
 
 1. Fetches request preview from main site (name, email, body, date)
 2. Menu: **Fulfill** / **Abandon** / **Keep pending** (default — Enter does not abandon)
@@ -119,9 +132,11 @@ Skip menu: `php artisan joes:fulfill {public_id} "summary" --yes`
 
 ### 5. Abandon (wrong claim or changed mind)
 
-```bash
-./bin/abandon {public_id}
+```powershell
+task claim:abandon PUBLIC_ID={public_id}
 ```
+
+Or: `./bin/internal/abandon.sh {public_id}`
 
 Shows preview, confirms, then:
 
@@ -137,7 +152,7 @@ php artisan joes:status --pending
 
 In production, run this on Joe's and `php artisan joes:status` on the main site separately — then match rows by `#` and `public_id`.
 
-**step** values: `claimed` (edit + deploy next) → `deployed` (run `./bin/fulfill`) → `done`.
+**step** values: `claimed` (edit + deploy next) → `deployed` (run `task claim:fulfill`) → `done`.
 
 ---
 
@@ -165,13 +180,14 @@ MAIN_SITE_WEBHOOK_URL=http://localhost/api/joes/requests
 # When bin/* runs via Sail, localhost is rewritten to host.docker.internal so the
 # container can reach the main site on your host (craftjd on port 80, Joe's on 8080).
 # Production / PHP-only servers use host php (Sail not in vendor with --no-dev).
-# Force host php locally: JOES_BIN_PHP=1 ./bin/fulfill …
+# Force host php locally: JOES_BIN_PHP=1 ./bin/internal/fulfill.sh …
 
+# From the Joe's Cafe repo:
 # 1. Submit on main site, open claim link (or: php artisan joes:claim {public_id})
 # 2. Edit files
-REQUEST_PUBLIC_ID={public_id} ./bin/deploy-local
+task claim:deploy-local PUBLIC_ID={public_id}
 # 3. Real webhook with confirmation menu
-./bin/fulfill {public_id} "Updated summer hours."
+task claim:fulfill PUBLIC_ID={public_id} SUMMARY="Updated summer hours."
 ```
 
 ---
@@ -186,9 +202,10 @@ REQUEST_PUBLIC_ID={public_id} ./bin/deploy-local
 | `app/Console/Commands/FulfillJoesChangeRequest.php` | Preview + confirm + fulfill/abandon |
 | `app/Console/Commands/JoesFulfillmentStatus.php` | `php artisan joes:status` |
 | `app/Console/Commands/AbandonJoesChangeRequest.php` | Explicit abandon |
-| `bin/deploy-local` | Local deploy metadata only |
-| `bin/fulfill` | Interactive finalize |
-| `bin/abandon` | Release claim on both sites |
+| `bin/internal/deploy-local.sh` | Local deploy metadata only (`task claim:deploy-local`) |
+| `bin/internal/fulfill.sh` | Interactive finalize (`task claim:fulfill`) |
+| `bin/internal/abandon.sh` | Release claim on both sites (`task claim:abandon`) |
+| `bin/internal/deploy.sh` | On-server deploy + optional claim recording |
 
 ---
 

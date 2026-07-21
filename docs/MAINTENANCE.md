@@ -6,13 +6,29 @@ Solo-maintainer runbook. Ubuntu 24.04 VPS, nginx, PHP 8.3, deploy via `git pull`
 
 ## New client — full checklist
 
-Work **top to bottom**. `CLIENT` = config basename (`bin/provision/clients/CLIENT.conf`, e.g. `acme`).
+Work **top to bottom**. `CLIENT` = config basename (`bin/internal/provision/clients/CLIENT.conf`, e.g. `acme`).
 
 ### 1. GitHub repo
 
 Create a new **private** repo for the client (empty, no README).
 
-### 2. Project on WSL
+### 2. Clone the project
+
+Replace `ORG/CLIENT-REPO` with the client repo. All later commands run from the project directory.
+
+**Laragon (Windows)** — clone into Laragon’s web root:
+
+```powershell
+cd C:\laragon\www
+git clone git@github.com:craftjd/laravel-starter.git CLIENT
+cd CLIENT
+git remote set-url origin git@github.com:ORG/CLIENT-REPO.git
+git push -u origin main
+```
+
+Enable the pretty URL in Laragon (Menu → www → CLIENT, or auto-virtual-hosts). Confirm Apache serves the Laravel public directory — DocumentRoot must end in `\public` (check `laragon\etc\apache2\sites-enabled\*.conf`). A directory listing means the root is wrong.
+
+**WSL** — Unix paths and shell only:
 
 ```bash
 mkdir -p ~/projects/CLIENT
@@ -22,11 +38,48 @@ git remote set-url origin git@github.com:ORG/CLIENT-REPO.git
 git push -u origin main
 ```
 
-Replace `ORG/CLIENT-REPO` with the client repo. All later commands run from this directory.
+### 3. Local development
 
-### 3. Local development (WSL)
+Pick **one** stack. Do not mix Sail npm with host npm.
 
-From the project root:
+#### Laragon (Windows)
+
+Use Laragon’s PHP / Composer / Node from a **Windows** terminal (PowerShell or CMD). Do not run Sail, `printf`, `touch`, or `id` here.
+
+```powershell
+composer install
+copy .env.example .env
+php artisan key:generate
+php -r "file_exists('database/database.sqlite') || touch('database/database.sqlite');"
+php artisan migrate
+npm ci
+npm run build
+```
+
+Edit `.env`:
+
+| Key | Value |
+|-----|--------|
+| `APP_NAME`, `CONTACT_EMAIL` | Site identity |
+| `APP_URL` | Laragon pretty URL, e.g. `http://joes.test` (must match the vhost) |
+| `MAIL_MAILER` | `log` (`.env.example` defaults to Sail/Mailhog) |
+
+After any `.env` change:
+
+```powershell
+php artisan config:clear
+```
+
+| URL | Purpose |
+|-----|---------|
+| `http://CLIENT.test` | Site (Laragon) |
+| — | Contact mail → `storage\logs\laravel.log` |
+
+Day-to-day Vite: `npm run dev` in a separate terminal. Laragon serves PHP — you do not need `php artisan serve` or `composer run dev` unless you prefer them.
+
+#### WSL + Sail
+
+From the project root in a **WSL** shell:
 
 ```bash
 composer install
@@ -44,15 +97,13 @@ printf 'WWWUSER=%s\nWWWGROUP=%s\n' "$(id -u)" "$(id -g)" >> .env
 
 (`id -u` / `id -g` override the placeholder `1000` values in `.env.example`.)
 
-**Sail (recommended):**
-
 ```bash
 ./vendor/bin/sail up -d
 ./vendor/bin/sail npm ci && ./vendor/bin/sail npm run build
 ./vendor/bin/sail npm run dev    # Vite — separate terminal
 ```
 
-Run **npm only through Sail** — do not run `npm` on the host first; mixed installs cause `vite: Permission denied` in the container.
+Run **npm only through Sail** — do not run `npm` on the Windows host or WSL host first; mixed installs cause `vite: Permission denied` in the container.
 
 | URL | Purpose |
 |-----|---------|
@@ -61,7 +112,7 @@ Run **npm only through Sail** — do not run `npm` on the host first; mixed inst
 
 Contact form mail uses `MAIL_HOST=mailhog` from `.env.example`. Stop: `./vendor/bin/sail down`.
 
-**Without Docker:**
+#### WSL without Docker
 
 ```bash
 npm ci && npm run build
@@ -69,7 +120,7 @@ composer run dev
 # or: php artisan serve
 ```
 
-Uses `MAIL_MAILER=log` — submissions in `storage/logs/laravel.log`.
+Set `MAIL_MAILER=log` — submissions in `storage/logs/laravel.log`.
 
 ### 4. Customize the site
 
@@ -84,7 +135,7 @@ Push to the client repo when ready.
 ### 5. Client config
 
 ```bash
-cp bin/provision/clients/_example.conf bin/provision/clients/CLIENT.conf
+cp bin/internal/provision/clients/_example.conf bin/internal/provision/clients/CLIENT.conf
 ```
 
 Edit `CLIENT.conf`:
@@ -115,9 +166,11 @@ If using Cloudflare (proxied): set SSL/TLS to **Flexible** until Certbot succeed
 
 ### 7. Provision server (new VPS only)
 
-```bash
-./bin/remote server CLIENT
+```powershell
+task provision:server
 ```
+
+Or: `bash ./bin/internal/remote.sh server CLIENT`
 
 Installs nginx, PHP 8.3, Composer, Node, Certbot, `deploy` user. Idempotent — safe to re-run.
 
@@ -125,9 +178,11 @@ Installs nginx, PHP 8.3, Composer, Node, Certbot, `deploy` user. Idempotent — 
 
 ### 8. GitHub deploy key (private repos only)
 
-```bash
-./bin/remote github-key CLIENT
+```powershell
+task provision:github-key
 ```
+
+Or: `bash ./bin/internal/remote.sh github-key CLIENT`
 
 Add the printed public key to the client repo: **Settings → Deploy keys** (read-only). Same key can serve multiple repos on one VPS.
 
@@ -135,9 +190,11 @@ Skip if the repo is public.
 
 ### 9. Provision site
 
-```bash
-./bin/remote site CLIENT
+```powershell
+CONFIRM=true task provision:site
 ```
+
+Or: `bash ./bin/internal/remote.sh site CLIENT`
 
 Clones to `/var/www/DOMAIN`, seeds `.env`, nginx vhost, optional Certbot (`SSL=true` covers `@` and `www`). Note the printed `MONITOR_KEY`.
 
@@ -145,25 +202,32 @@ Clones to `/var/www/DOMAIN`, seeds `.env`, nginx vhost, optional Certbot (`SSL=t
 
 ### 10. Push env to server
 
-```bash
-./bin/remote env CLIENT push
+```powershell
+task provision:env
 ```
 
 Syncs client config → server `.env`. Shows a diff and asks `[Y/n]` before applying. Refreshes config cache automatically.
 
-```bash
-./bin/remote env CLIENT check    # validate
-./bin/remote env CLIENT show     # redacted .env on server
+```powershell
+bash ./bin/internal/remote.sh env CLIENT check    # validate
+bash ./bin/internal/remote.sh env CLIENT show     # redacted .env on server
 ```
 
-### 11. Deploy and verify (on server)
+### 11. Deploy and verify
+
+Prefer Deployer from your laptop:
+
+```powershell
+task deploy
+```
+
+Legacy on-server in-place deploy (Joe's claim recording supported):
 
 ```bash
 ssh deploy@IP
-cd /var/www/DOMAIN
-./bin/deploy
-sudo systemctl reload php8.3-fpm
-./bin/check
+cd /var/www/DOMAIN/current
+REQUEST_PUBLIC_ID=… ./bin/internal/deploy.sh   # omit REQUEST_PUBLIC_ID for a normal release
+./bin/internal/check.sh
 ```
 
 Contact form works with `MAIL_MAILER=log` (submissions in `storage/logs/laravel.log`).
@@ -171,8 +235,8 @@ Contact form works with `MAIL_MAILER=log` (submissions in `storage/logs/laravel.
 ### 12. Go-live
 
 1. Set `MAIL_MAILER=smtp` and SMTP credentials in `CLIENT.conf`
-2. `./bin/remote env CLIENT push`
-3. On server: `./bin/deploy && ./bin/check`
+2. `task provision:env` (or `./bin/internal/remote.sh env CLIENT push`)
+3. `task deploy`
 4. Submit `/contact` — confirm delivery to `CONTACT_EMAIL`
 5. Cloudflare → **Full (strict)** if proxied
 
@@ -180,16 +244,13 @@ Contact form works with `MAIL_MAILER=log` (submissions in `storage/logs/laravel.
 
 ## Ongoing
 
-### Deploy updates (server)
+### Deploy updates
 
-```bash
-cd /var/www/DOMAIN
-./bin/deploy
-sudo systemctl reload php8.3-fpm
-./bin/check
+```powershell
+task deploy
 ```
 
-`bin/deploy` pulls `main`, runs composer, npm build, migrate, caches config. It does **not** edit `.env`.
+On-server fallback: `./bin/internal/deploy.sh` then `./bin/internal/check.sh`. Does **not** edit `.env`.
 
 **Joe's Cafe integration** (optional — in `CLIENT.conf`, synced via `env push`):
 
@@ -202,10 +263,10 @@ sudo systemctl reload php8.3-fpm
 
 ### Change site or mail settings (laptop)
 
-```bash
-# edit bin/provision/clients/CLIENT.conf
-./bin/remote env CLIENT push
-# on server: ./bin/check
+```powershell
+# edit bin/internal/provision/clients/CLIENT.conf
+task provision:env
+# then: task site:check
 ```
 
 ### Merge starter platform updates (laptop)
@@ -245,7 +306,10 @@ Contact form: `pages/contact` → `Livewire/ContactForm` → mail to `CONTACT_EM
 
 ### Mail — local dev
 
-`.env.example` ships with Mailhog + Sail. Submit `/contact`, read mail at http://localhost:8025. Without Sail, set `MAIL_MAILER=log`.
+| Stack | Mail |
+|-------|------|
+| WSL + Sail | `.env.example` defaults (`MAIL_HOST=mailhog`). Submit `/contact`, read at http://localhost:8025 |
+| Laragon / no Docker | Set `MAIL_MAILER=log` — submissions in `storage/logs/laravel.log` |
 
 ### Mail — production SMTP
 
@@ -265,10 +329,10 @@ MAIL_SCHEME=tls
 ### Private GitHub repos
 
 - `REPO` must be SSH: `git@github.com:ORG/repo.git`
-- `./bin/remote github-key CLIENT` once per VPS
+- `task provision:github-key` once per VPS (or `bash ./bin/internal/remote.sh github-key CLIENT`)
 - Add deploy key to each private repo (read-only)
 - Verify on server: `git ls-remote git@github.com:ORG/repo.git HEAD`
-- Rotate: `./bin/remote github-key CLIENT --regenerate`
+- Rotate: `bash ./bin/internal/remote.sh github-key CLIENT --regenerate`
 
 | Problem | Fix |
 |---------|-----|
@@ -278,16 +342,19 @@ MAIL_SCHEME=tls
 
 ### DNS and TLS notes
 
-- Certbot needs `@` and `www` A records first; re-run `./bin/remote site CLIENT` if it failed earlier
+- Certbot needs `@` and `www` A records first; re-run `task provision:site` if it failed earlier
 - Error 521 (Cloudflare): origin has no cert yet — use **Flexible** until Certbot runs
 - `APP_URL` is set from `DOMAIN` + `SSL` via env push — no manual edit
 
 ### Scripts
 
 ```
-bin/remote server|github-key|site|env CLIENT   # laptop → VPS
-bin/deploy, bin/check                            # on server
-bin/provision/clients/CLIENT.conf                # source of truth (gitignored)
+bin/internal/remote.sh server|github-key|site|env CLIENT   # laptop → VPS (or: task provision:*)
+bin/internal/deploy.sh, bin/internal/check.sh              # on server (or: task deploy / site:check)
+bin/internal/provision/clients/CLIENT.conf                 # source of truth (gitignored)
+
+Claim workflow (Joe's repo only): `task claim:deploy-local|fulfill|abandon`
+Hub ops (craftjd repo only): `task hub:list|open|prune|undo|…`
 ```
 
 | Command | Purpose |
@@ -304,7 +371,7 @@ Provisioned automatically: `APP_KEY`, `MONITOR_KEY`, `APP_URL`. Never overwritte
 
 `GET /health` with header `X-Monitor-Key` (value from `.env`). Returns 404 when `MONITOR_KEY` unset. Returns 503 when a sub-check fails (`db`, `storage`, `mail`).
 
-### bin/check
+### bin/internal/check.sh
 
 | Check | Verifies |
 |-------|----------|
