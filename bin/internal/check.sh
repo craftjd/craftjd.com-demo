@@ -12,7 +12,7 @@ echo "==> check"
 
 for check in "${CHECKS[@]}"; do
     echo "--- ${check}"
-    if "${BIN_ROOT}/checks/${check}"; then
+    if bash "${BIN_ROOT}/checks/${check}"; then
         :
     else
         FAILED=1

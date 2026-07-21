@@ -155,7 +155,7 @@ after('deploy:success', 'deploy:meta');
 
 task('deploy:check', function () {
     cd('{{release_path}}');
-    run('CHECK_URL=http://127.0.0.1 ./bin/internal/check.sh');
+    run('CHECK_URL=http://127.0.0.1 bash ./bin/internal/check.sh');
 });
 after('deploy:meta', 'deploy:check');
 after('rollback', 'deploy:meta');
