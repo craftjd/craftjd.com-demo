@@ -12,12 +12,26 @@ BASE_URL="${BASE_URL:-http://127.0.0.1}"
 BASE_URL="${BASE_URL%/}"
 
 CURL_OPTS=(-fsS)
+HEALTH_CURL_OPTS=(-sS)
+APP_URL="$(load_env_var APP_URL)"
+HOST=""
 
+# Loopback checks must keep the real Host header and must not follow
+# HTTP→HTTPS redirects out to the public URL (that breaks /health).
 if [[ "$BASE_URL" =~ ^https?://(127\.0\.0\.1|localhost)(:[0-9]+)?$ ]]; then
-    APP_URL="$(load_env_var APP_URL)"
     if [[ -n "$APP_URL" ]]; then
         HOST="$(echo "$APP_URL" | sed -E 's#^https?://##; s#/.*##; s#:.*##')"
         CURL_OPTS+=(-H "Host: ${HOST}")
+        HEALTH_CURL_OPTS+=(-H "Host: ${HOST}")
+    fi
+
+    # If the site is HTTPS in production, hit loopback over TLS and skip
+    # cert verify (we're talking to nginx on this box, not the public CA path).
+    if [[ "$APP_URL" =~ ^https:// ]]; then
+        local_host="$(echo "$BASE_URL" | sed -E 's#^https?://##; s#/.*##')"
+        BASE_URL="https://${local_host}"
+        CURL_OPTS+=(-k)
+        HEALTH_CURL_OPTS+=(-k)
     fi
 fi
 
@@ -33,16 +47,24 @@ ok "/sitemap.xml"
 MONITOR_KEY="$(load_env_var MONITOR_KEY)"
 if [[ -n "$MONITOR_KEY" ]]; then
     health_tmp="$(mktemp)"
-    health_code="$(curl -sS -L -o "$health_tmp" -w "%{http_code}" \
+    # No -L: stay on loopback. Following redirects sends us to the public
+    # HTTPS URL and drops the local Host/key behaviour that deploy checks need.
+    health_code="$(curl "${HEALTH_CURL_OPTS[@]}" -o "$health_tmp" -w "%{http_code}" \
         -H "X-Monitor-Key: ${MONITOR_KEY}" "${BASE_URL}/health" || true)"
     if [[ "$health_code" == "200" ]]; then
         ok "/health"
     else
         if [[ -s "$health_tmp" ]]; then
-            echo "  /health response: $(tr -d '\n' <"$health_tmp")" >&2
+            echo "  /health response: $(tr -d '\n' <"$health_tmp" | head -c 200)" >&2
+        fi
+        if [[ "$health_code" == "301" || "$health_code" == "302" ]]; then
+            fail "GET /health (HTTP ${health_code} redirect — check should use HTTPS loopback; APP_URL=${APP_URL:-unset})"
         fi
         if [[ "$health_code" == "503" ]]; then
             fail "GET /health (HTTP 503 degraded — often stale config after .env changes; run: php artisan config:clear && php artisan config:cache)"
+        fi
+        if [[ "$health_code" == "404" ]]; then
+            fail "GET /health (HTTP 404 — MONITOR_KEY in .env but missing from config cache; run: php artisan config:clear && php artisan config:cache)"
         fi
         fail "GET /health (HTTP ${health_code:-connection failed})"
     fi
