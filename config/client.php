@@ -71,7 +71,7 @@ return [
     'theme' => [
         'logo' => null,
         'logo_alt' => null,
-        'footer_text' => 'Independent coffee shop. No franchise. No nonsense.',
+        'footer_text' => 'Canadian-owned. Independent. No franchise. No nonsense.',
     ],
 
     /*

@@ -3,7 +3,7 @@
   "sourcing": {
     "title": "What we source",
     "items": [
-      { "icon": "bean", "text": "Coffee from importers we can name; every roast batch logged" },
+      { "icon": "bean", "text": "Coffee we roast ourselves from importers we can name; every batch logged" },
       { "icon": "farm", "text": "Regional eggs and dairy when the supply chain cooperates" },
       { "icon": "label", "text": "Whole, oat, and 2% milk — allergens posted at the counter daily" }
     ]
