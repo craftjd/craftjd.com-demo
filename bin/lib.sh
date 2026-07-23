@@ -59,18 +59,18 @@ explain_joes_git_failure() {
         || [[ "$msg" == *"matches the git SHA from claim"* ]]; then
         echo "  hint: deploy SHA equals the SHA captured at claim time." >&2
         echo "        Production: commit your edits, then REQUEST_PUBLIC_ID=… ./bin/internal/deploy.sh" >&2
-        echo "        Local:        task claim:deploy-local PUBLIC_ID=… (no new commit required)" >&2
+        echo "        Local:        task dev:claim:deploy PUBLIC_ID=… (no new commit required)" >&2
     fi
 
     if [[ "$msg" == *"not ahead of the claim SHA"* ]] \
         || [[ "$msg" == *"Rollback deploys"* ]]; then
         echo "  hint: deploy SHA is older than (or not descended from) the claim SHA." >&2
         echo "        Re-open the claim link after a rollback, then deploy forward commits." >&2
-        echo "        Local: task claim:deploy-local PUBLIC_ID=… with JOES_LOCAL_DEPLOY_BYPASS_GIT=true in .env" >&2
+        echo "        Local: task dev:claim:deploy PUBLIC_ID=… (forces local bypass)" >&2
     fi
 
     if [[ "$msg" == *"No deploy recorded for this claim"* ]]; then
-        echo "  hint: run REQUEST_PUBLIC_ID=… ./bin/internal/deploy.sh (production) or task claim:deploy-local (local) before fulfill." >&2
+        echo "  hint: run REQUEST_PUBLIC_ID=… ./bin/internal/deploy.sh (production) or task dev:claim:deploy (local) before fulfill." >&2
     fi
 
     if [[ "$msg" == *"No pending claim"* ]]; then
@@ -90,6 +90,101 @@ load_env_var() {
         # grep exit 1 when key is missing — must not abort callers under set -o pipefail.
         grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true
     fi
+}
+
+# Claim helpers — JOES_ENV must be explicit: prod | dev (never default).
+require_joes_claim_env() {
+    case "${JOES_ENV:-}" in
+        prod|dev) ;;
+        *)
+            fail "JOES_ENV must be prod or dev (use: task claim:* for production main site, task dev:claim:* for local)"
+            ;;
+    esac
+}
+
+announce_joes_claim_env() {
+    require_joes_claim_env
+    echo
+    if [[ "$JOES_ENV" == "prod" ]]; then
+        echo "════════════════════════════════════════════"
+        echo "  CLAIM — PRODUCTION main site (site.conf)"
+        echo "════════════════════════════════════════════"
+    else
+        echo "════════════════════════════════════════════"
+        echo "  CLAIM — LOCAL DEV ONLY (local main site)"
+        echo "════════════════════════════════════════════"
+    fi
+    echo
+}
+
+joes_url_looks_local() {
+    local u="$1"
+    [[ "$u" == *localhost* || "$u" == *127.0.0.1* || "$u" == *.test* || "$u" == *host.docker.internal* ]]
+}
+
+joes_url_looks_prod() {
+    local u="$1"
+    [[ "$u" == *://www.craftjd.com* || "$u" == *://craftjd.com* ]]
+}
+
+# Sets MAIN_SITE_WEBHOOK_URL (+ related) for artisan; prints target URL.
+export_joes_claim_main_site_env() {
+    require_joes_claim_env
+    local root conf url
+    root="$(project_root)"
+    conf="${root}/bin/internal/provision/clients/site.conf"
+
+    if [[ "$JOES_ENV" == "prod" ]]; then
+        url="$(load_env_var MAIN_SITE_WEBHOOK_URL "$conf")"
+        if [[ -z "$url" ]]; then
+            local domain ssl
+            domain="$(load_env_var MAIN_SITE_DOMAIN "$conf")"
+            domain="${domain:-www.craftjd.com}"
+            ssl="$(load_env_var MAIN_SITE_SSL "$conf")"
+            if [[ "$ssl" == "false" ]]; then
+                url="http://${domain}/api/joes/requests"
+            else
+                url="https://${domain}/api/joes/requests"
+            fi
+        fi
+        if joes_url_looks_local "$url"; then
+            fail "prod claim refused local MAIN_SITE_WEBHOOK_URL: ${url}"
+        fi
+        if ! joes_url_looks_prod "$url"; then
+            fail "prod claim MAIN_SITE_WEBHOOK_URL must be craftjd.com, got: ${url}"
+        fi
+        export MAIN_SITE_WEBHOOK_URL="$url"
+        export JOES_LOCAL_DEPLOY_BYPASS_GIT=false
+    else
+        url="$(load_env_var MAIN_SITE_WEBHOOK_URL "${root}/.env")"
+        if [[ -z "$url" || "$url" == \#* ]]; then
+            url="http://craftjd.test/api/joes/requests"
+        fi
+        # Strip accidental leading comment leftovers
+        url="${url%%#*}"
+        url="$(echo "$url" | tr -d '[:space:]')"
+        if [[ "$url" != http://* && "$url" != https://* ]]; then
+            url="http://${url}"
+        fi
+        if joes_url_looks_prod "$url"; then
+            fail "dev claim refused production MAIN_SITE_WEBHOOK_URL (${url}). Use task claim:* for production."
+        fi
+        if ! joes_url_looks_local "$url"; then
+            fail "dev claim MAIN_SITE_WEBHOOK_URL must be local (.test / localhost), got: ${url}"
+        fi
+        export MAIN_SITE_WEBHOOK_URL="$url"
+        export JOES_LOCAL_DEPLOY_BYPASS_GIT=true
+    fi
+
+    local secret
+    secret="$(load_env_var JOES_WEBHOOK_SECRET "${root}/.env")"
+    if [[ -z "$secret" ]]; then
+        secret="$(load_env_var JOES_WEBHOOK_SECRET "$conf")"
+    fi
+    [[ -n "$secret" ]] || fail "JOES_WEBHOOK_SECRET is not set in .env or site.conf"
+    export JOES_WEBHOOK_SECRET="$secret"
+
+    echo "    MAIN_SITE_WEBHOOK_URL=${MAIN_SITE_WEBHOOK_URL}"
 }
 
 require_command() {

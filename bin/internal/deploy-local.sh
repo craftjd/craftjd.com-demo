@@ -7,9 +7,8 @@ cd "$ROOT"
 # shellcheck disable=SC1091
 source "$ROOT/bin/lib.sh"
 
-echo "==> deploy-local"
-echo "    Local testing only — skips pull, build, migrate, and cache."
-echo "    The app is already running; this records deploy metadata only."
+echo "==> deploy-local (LOCAL DEV ONLY)"
+echo "    Skips pull, build, migrate, and cache — records deploy metadata only."
 if use_sail_artisan; then
     echo "    Using Sail for artisan (vendor/bin/sail detected)."
 fi
@@ -21,7 +20,7 @@ require_artisan_runner
 REQUEST_PUBLIC_ID="${REQUEST_PUBLIC_ID:-}"
 
 if [[ -z "$REQUEST_PUBLIC_ID" ]]; then
-    fail "REQUEST_PUBLIC_ID is required. Example: REQUEST_PUBLIC_ID=01920e1a-… ./bin/internal/deploy-local.sh (or: task claim:deploy-local PUBLIC_ID=…)"
+    fail "REQUEST_PUBLIC_ID is required. Example: task dev:claim:deploy PUBLIC_ID=…"
 fi
 
 step "read git HEAD (stand-in deploy SHA for this run)"
@@ -47,4 +46,5 @@ ok "claim row updated (${GIT_SHA:0:7}, local git bypass)"
 
 echo ""
 echo "Deploy-local complete."
-echo "Next: task claim:fulfill PUBLIC_ID=${REQUEST_PUBLIC_ID} SUMMARY=\"summary of changes\""
+echo "Next: task dev:claim:fulfill PUBLIC_ID=${REQUEST_PUBLIC_ID} SUMMARY=\"summary of changes\""
+echo "  or: task claim:fulfill … if the main site target is production"

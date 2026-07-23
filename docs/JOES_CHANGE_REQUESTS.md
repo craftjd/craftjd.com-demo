@@ -8,12 +8,18 @@ Joe's stores **no client PII** (name, email, request body). That data is fetched
 
 ### Where to run Task commands
 
-| You are in… | Task namespace | Purpose |
-|-------------|---------------|---------|
-| **Joe's Cafe repo** (`joes`) | `claim:*` | Work a claimed request on this site (deploy-local, fulfill, abandon) |
-| **Main site repo** (`craftjd`) | `hub:*` | Operator tools against the main-site API / SSH (list, prune, undo, webhook helpers) |
+| You are in… | Namespace | Environment | Purpose |
+|-------------|-----------|-------------|---------|
+| **Joe's Cafe** (`joes`) | `claim:*` | **Production main site** | Fulfill/abandon → `www.craftjd.com` (`site.conf`) |
+| **Joe's Cafe** (`joes`) | `dev:claim:*` | **Local only** | Deploy-record / fulfill / abandon / PHPUnit against local craftjd |
+| **Main site** (`craftjd`) | `hub:*` | **Production only** | SSH / webhooks against www |
+| **Main site** (`craftjd`) | `dev:hub:*` | **Local only** | Pipeline check + webhooks against `.env` `APP_URL` |
 
 Laravel artisan commands stay `joes:*` on both apps (e.g. `php artisan joes:fulfill`). Do not confuse those with Task namespaces.
+
+**Rule:** `claim:*` / `hub:*` never target local `.test` hosts. Local work is always under `dev:`.
+
+**Before outreach (from craftjd):** `task hub:smoke CONFIRM=true` — see craftjd `docs/JOES_PROD_SMOKE.md`.
 
 ---
 
@@ -25,8 +31,8 @@ Both sites must use the **same webhook secret**:
 |---------------------|------------------------|
 | `JOES_SITE_URL` | — (Joe's own `APP_URL`) |
 | `JOES_WEBHOOK_SECRET` | `JOES_WEBHOOK_SECRET` |
-| — | `MAIN_SITE_WEBHOOK_URL` → `https://craftjd.com/api/joes/requests` |
-| — | `JOES_LOCAL_DEPLOY_BYPASS_GIT=true` (local only) |
+| — | `MAIN_SITE_WEBHOOK_URL` → `https://www.craftjd.com/api/joes/requests` |
+| — | `JOES_LOCAL_DEPLOY_BYPASS_GIT=true` (local `.env` only; `dev:claim:*` forces this) |
 
 ---
 
@@ -107,7 +113,7 @@ REQUEST_PUBLIC_ID=01920e1a-… ./bin/internal/deploy.sh
 Local parallel testing (app already running):
 
 ```powershell
-task claim:deploy-local PUBLIC_ID=01920e1a-…
+task dev:claim:deploy PUBLIC_ID=01920e1a-…
 ```
 
 Optional `REQUEST_NUMBER=42` sets the display number in `deploy-meta.json` changelog only.
@@ -116,11 +122,17 @@ Fulfillment validates the **DB claim row**, not `deploy-meta.json` (footer chang
 
 ### 4. You finalize (Joe's Cafe repo)
 
+**Production** (posts to www.craftjd.com):
+
 ```powershell
 task claim:fulfill PUBLIC_ID={public_id} SUMMARY="Updated summer hours on the contact section."
 ```
 
-Or: `./bin/internal/fulfill.sh {public_id} "Updated summer hours on the contact section."`
+**Local only** (posts to craftjd.test):
+
+```powershell
+task dev:claim:fulfill PUBLIC_ID={public_id} SUMMARY="Updated summer hours on the contact section."
+```
 
 1. Fetches request preview from main site (name, email, body, date)
 2. Menu: **Fulfill** / **Abandon** / **Keep pending** (default — Enter does not abandon)
@@ -132,11 +144,17 @@ Skip menu: `php artisan joes:fulfill {public_id} "summary" --yes`
 
 ### 5. Abandon (wrong claim or changed mind)
 
+**Production:**
+
 ```powershell
 task claim:abandon PUBLIC_ID={public_id}
 ```
 
-Or: `./bin/internal/abandon.sh {public_id}`
+**Local only:**
+
+```powershell
+task dev:claim:abandon PUBLIC_ID={public_id}
+```
 
 Shows preview, confirms, then:
 
@@ -152,7 +170,7 @@ php artisan joes:status --pending
 
 In production, run this on Joe's and `php artisan joes:status` on the main site separately — then match rows by `#` and `public_id`.
 
-**step** values: `claimed` (edit + deploy next) → `deployed` (run `task claim:fulfill`) → `done`.
+**step** values: `claimed` (edit + deploy next) → `deployed` (run `task claim:fulfill` or `task dev:claim:fulfill`) → `done`.
 
 ---
 
@@ -173,9 +191,9 @@ Lookup is always by **`main_request_public_id`**.
 ## Local testing (main site + Joe's in parallel)
 
 ```bash
-# .env on Joe's
+# .env on Joe's (optional — dev:claim:* forces local URL + git bypass)
 JOES_LOCAL_DEPLOY_BYPASS_GIT=true
-MAIN_SITE_WEBHOOK_URL=http://localhost/api/joes/requests
+MAIN_SITE_WEBHOOK_URL=http://craftjd.test/api/joes/requests
 
 # When bin/* runs via Sail, localhost is rewritten to host.docker.internal so the
 # container can reach the main site on your host (craftjd on port 80, Joe's on 8080).
@@ -183,11 +201,11 @@ MAIN_SITE_WEBHOOK_URL=http://localhost/api/joes/requests
 # Force host php locally: JOES_BIN_PHP=1 ./bin/internal/fulfill.sh …
 
 # From the Joe's Cafe repo:
-# 1. Submit on main site, open claim link (or: php artisan joes:claim {public_id})
+# 1. Submit on local main site, open claim link (or: php artisan joes:claim {public_id})
 # 2. Edit files
-task claim:deploy-local PUBLIC_ID={public_id}
-# 3. Real webhook with confirmation menu
-task claim:fulfill PUBLIC_ID={public_id} SUMMARY="Updated summer hours."
+task dev:claim:deploy PUBLIC_ID={public_id}
+# 3. Real webhook with confirmation menu (LOCAL main site only)
+task dev:claim:fulfill PUBLIC_ID={public_id} SUMMARY="Updated summer hours."
 ```
 
 ---
@@ -202,9 +220,9 @@ task claim:fulfill PUBLIC_ID={public_id} SUMMARY="Updated summer hours."
 | `app/Console/Commands/FulfillJoesChangeRequest.php` | Preview + confirm + fulfill/abandon |
 | `app/Console/Commands/JoesFulfillmentStatus.php` | `php artisan joes:status` |
 | `app/Console/Commands/AbandonJoesChangeRequest.php` | Explicit abandon |
-| `bin/internal/deploy-local.sh` | Local deploy metadata only (`task claim:deploy-local`) |
-| `bin/internal/fulfill.sh` | Interactive finalize (`task claim:fulfill`) |
-| `bin/internal/abandon.sh` | Release claim on both sites (`task claim:abandon`) |
+| `bin/internal/deploy-local.sh` | Local deploy metadata only (`task dev:claim:deploy`) |
+| `bin/internal/fulfill.sh` | Interactive finalize (`task claim:fulfill` / `dev:claim:fulfill`) |
+| `bin/internal/abandon.sh` | Release claim on both sites (`task claim:abandon` / `dev:claim:abandon`) |
 | `bin/internal/deploy.sh` | On-server deploy + optional claim recording |
 
 ---

@@ -24,12 +24,6 @@ tasks:
       - php artisan key:generate
       - php artisan migrate
       - npm install --ignore-scripts
-      - npm run build
-
-  dev:
-    desc: Start all dev services (serve + queue + pail + vite)
-    cmds:
-      - concurrently "php artisan serve" "php artisan queue:listen" "php artisan pail" "npm run dev"
 
   # ─── Tests ──────────────────────────────────────────────────────────────
   # Day-to-day: Unit+Feature (sqlite :memory:, faked mail/cache). No live site.
@@ -71,57 +65,75 @@ tasks:
       - php artisan config:clear
       - php artisan test --group={{.GROUP}}
 
-  # Joe's Cafe claim/fulfill PHPUnit group (run FROM this repo)
-  claim:test:
-    desc: "[Joe's repo] Run all Joe's pipeline PHPUnit tests (group=joes)"
+  # Joe's Cafe PHPUnit (hermetic — LOCAL DEV)
+  dev:claim:test:
+    desc: "[LOCAL DEV] Run all Joe's pipeline PHPUnit tests (group=joes)"
     cmds:
       - php artisan config:clear
       - php artisan test --group=joes
 
-  claim:test:happy:
-    desc: "[Joe's repo] Run the full happy-path pipeline feature test"
+  dev:claim:test:happy:
+    desc: "[LOCAL DEV] Run the full happy-path pipeline feature test"
     cmds:
       - php artisan config:clear
       - php artisan test --filter="test_happy_path_full_pipeline" tests/Feature/JoesFulfillmentTest.php
+
+  # ─── Claim workflow — LOCAL DEV only ────────────────────────────────────
+  # Forces local MAIN_SITE (.test / localhost) and git bypass. Refuses craftjd.com.
+
+  dev:claim:deploy:
+    desc: "[LOCAL DEV] Record local deploy on a claim (PUBLIC_ID=xxx). No pull/build."
+    requires:
+      vars: [PUBLIC_ID]
+    cmds:
+      - REQUEST_PUBLIC_ID={{.PUBLIC_ID}} bash ./bin/internal/deploy-local.sh
+
+  dev:claim:fulfill:
+    desc: "[LOCAL DEV] Fulfill against local main site (PUBLIC_ID + SUMMARY)"
+    requires:
+      vars: [PUBLIC_ID, SUMMARY]
+    stdin: true
+    cmds:
+      - JOES_ENV=dev bash ./bin/internal/fulfill.sh "{{.PUBLIC_ID}}" "{{.SUMMARY}}"
+
+  dev:claim:abandon:
+    desc: "[LOCAL DEV] Abandon against local main site (PUBLIC_ID=xxx)"
+    requires:
+      vars: [PUBLIC_ID]
+    stdin: true
+    cmds:
+      - JOES_ENV=dev bash ./bin/internal/abandon.sh {{.PUBLIC_ID}}
 
   dev:check:
     desc: Run local live-site health checks (requires web server up)
     cmds:
       - bash ./bin/internal/check.sh
 
-  # ─── Dev — local ops (seed) ─────────────────────────────────────────────
-  # (dev:setup / dev above; joes tasks below)
   dev:seed:
     desc: Seed the local database
     cmds:
       - php artisan db:seed
 
-  # ─── Claim workflow — run FROM the Joe's Cafe repo only ─────────────────
-  # Main-site (craftjd) hub ops use a different namespace: hub:* there.
-  # Artisan commands on this app remain joes:* (Laravel), e.g. php artisan joes:fulfill.
-
-  claim:deploy-local:
-    desc: "[Joe's repo] Record local deploy on a claim (PUBLIC_ID=xxx). Skips pull/build/migrate."
-    requires:
-      vars: [PUBLIC_ID]
-    cmds:
-      - REQUEST_PUBLIC_ID={{.PUBLIC_ID}} bash ./bin/internal/deploy-local.sh
+  # ─── Claim workflow — PRODUCTION main site (Joe's Cafe repo) ────────────
+  # claim:* forces MAIN_SITE_WEBHOOK_URL from site.conf (www.craftjd.com).
+  # Local parallel testing: task dev:claim:*
+  # Hub ops on craftjd: hub:* (prod) / dev:hub:* (local)
 
   claim:fulfill:
-    desc: "[Joe's repo] Fulfill a claim (PUBLIC_ID=xxx SUMMARY=\"…\"). Interactive confirm."
+    desc: "[PRODUCTION] Fulfill a claim against www.craftjd.com (PUBLIC_ID + SUMMARY)"
     requires:
       vars: [PUBLIC_ID, SUMMARY]
     stdin: true
     cmds:
-      - bash ./bin/internal/fulfill.sh "{{.PUBLIC_ID}}" "{{.SUMMARY}}"
+      - JOES_ENV=prod bash ./bin/internal/fulfill.sh "{{.PUBLIC_ID}}" "{{.SUMMARY}}"
 
   claim:abandon:
-    desc: "[Joe's repo] Abandon a claim (PUBLIC_ID=xxx). Interactive confirm."
+    desc: "[PRODUCTION] Abandon a claim against www.craftjd.com (PUBLIC_ID=xxx)"
     requires:
       vars: [PUBLIC_ID]
     stdin: true
     cmds:
-      - bash ./bin/internal/abandon.sh {{.PUBLIC_ID}}
+      - JOES_ENV=prod bash ./bin/internal/abandon.sh {{.PUBLIC_ID}}
 
   # ─── Deploy — via Deployer SSH (local machine only) ─────────────────────
   deploy:

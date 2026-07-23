@@ -354,8 +354,8 @@ bin/internal/remote.sh server|github-key|site|env CLIENT   # laptop → VPS (or:
 bin/internal/deploy.sh, bin/internal/check.sh              # on server (or: task deploy / site:check)
 bin/internal/provision/clients/CLIENT.conf                 # source of truth (gitignored)
 
-Claim workflow (Joe's repo only): `task claim:deploy-local|fulfill|abandon`
-Hub ops (craftjd repo only): `task hub:list|open|prune|undo|…`
+Claim workflow (Joe's repo): `task claim:fulfill|abandon` (prod) / `task dev:claim:deploy|fulfill|abandon` (local)
+Hub ops (craftjd repo): `task hub:*` (prod www) / `task dev:hub:*` (local)
 ```
 
 | Command | Purpose |

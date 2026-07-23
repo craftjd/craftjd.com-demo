@@ -76,5 +76,5 @@ echo ""
 echo "Deploy complete. Run: ./bin/internal/check.sh"
 if [[ -n "$REQUEST_PUBLIC_ID" ]]; then
     echo "Next: task claim:fulfill PUBLIC_ID=${REQUEST_PUBLIC_ID} SUMMARY=\"summary of changes\""
-    echo "  or: ./bin/internal/fulfill.sh ${REQUEST_PUBLIC_ID} \"summary of changes\""
+    echo "  or (local): task dev:claim:fulfill PUBLIC_ID=${REQUEST_PUBLIC_ID} SUMMARY=\"summary of changes\""
 fi
