@@ -13,7 +13,8 @@ class FulfillJoesChangeRequest extends Command
     protected $signature = 'joes:fulfill
         {publicId : Main site request public ID (UUID)}
         {summary : Summary sent to the main site webhook}
-        {--yes : Skip confirmation and fulfill immediately}';
+        {--yes : Skip confirmation and fulfill immediately}
+        {--local : Smoke/local testing — skip git descendant checks (never use for real visitor work)}';
 
     protected $description = 'Preview the main-site request, confirm, then notify the main site';
 
@@ -41,7 +42,7 @@ class FulfillJoesChangeRequest extends Command
         $this->displayPreview($preview);
 
         if ($this->option('yes')) {
-            return $this->runFulfill($fulfillments, $publicId, $summary);
+            return $this->runFulfill($fulfillments, $publicId, $summary, (bool) $this->option('local'));
         }
 
         $choice = $this->choice(
@@ -74,13 +75,17 @@ class FulfillJoesChangeRequest extends Command
             return self::SUCCESS;
         }
 
-        return $this->runFulfill($fulfillments, $publicId, $summary);
+        return $this->runFulfill($fulfillments, $publicId, $summary, (bool) $this->option('local'));
     }
 
-    private function runFulfill(JoesFulfillmentService $fulfillments, string $publicId, string $summary): int
-    {
+    private function runFulfill(
+        JoesFulfillmentService $fulfillments,
+        string $publicId,
+        string $summary,
+        bool $localBypassGit = false,
+    ): int {
         try {
-            $fulfillment = $fulfillments->fulfill($publicId, $summary);
+            $fulfillment = $fulfillments->fulfill($publicId, $summary, $localBypassGit);
         } catch (RuntimeException $exception) {
             $this->components->error($exception->getMessage());
 
@@ -89,6 +94,10 @@ class FulfillJoesChangeRequest extends Command
 
         $this->components->info("Request #{$fulfillment->main_request_id} fulfilled.");
         $this->line('Main site notified — check your inbox to reply to the requester.');
+
+        if ($localBypassGit) {
+            $this->line('Local/smoke mode: git descendant checks were skipped.');
+        }
 
         return self::SUCCESS;
     }
