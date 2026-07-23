@@ -6,6 +6,7 @@ use App\Livewire\CoffeeClubForm;
 use App\Livewire\ContactForm;
 use App\Livewire\TakeoutOrderForm;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -31,6 +32,23 @@ class HomePageTest extends TestCase
         config([
             'client.site_name' => "Joe's",
             'client.site_description' => 'Drinkable Coffee.',
+            'joes.main_site_webhook_url' => 'https://craftjd.test/api/joes/requests',
+            'joes.webhook_secret' => 'test-secret',
+        ]);
+
+        Http::fake([
+            'https://craftjd.test/api/joes/requests*' => Http::response([
+                'data' => [
+                    [
+                        'number' => 42,
+                        'request' => 'Please update summer hours.',
+                        'fulfillment_summary' => 'Updated contact section hours for the sample site.',
+                        'submitted_at' => '2026-06-19T20:00:00Z',
+                        'claimed_at' => '2026-06-19T20:30:00Z',
+                        'completed_at' => '2026-06-19T21:17:30Z',
+                    ],
+                ],
+            ]),
         ]);
 
         $this->get('/')
@@ -40,7 +58,7 @@ class HomePageTest extends TestCase
             ->assertSee('Ridge Line Roasters', false)
             ->assertSee('Find the shop', false)
             ->assertSee('id="gallery"', false)
-            ->assertSee('Request changelog', false)
+            ->assertSee("Joe's requests", false)
             ->assertSee('Updated contact section hours for the sample site.', false)
             ->assertSee('Morning Bun', false)
             ->assertSee('Trail Mix Latte', false)

@@ -84,7 +84,7 @@ class JoesFulfillmentTest extends TestCase
         app(JoesFulfillmentService::class)->claim(self::PUBLIC_ID_42, 42, now()->subDay());
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('No deploy recorded for this claim');
+        $this->expectExceptionMessage('Recorded deploy predates this claim');
 
         app(JoesFulfillmentService::class)->fulfill(self::PUBLIC_ID_42, 'Updated summer hours.');
     }
@@ -304,13 +304,15 @@ class JoesFulfillmentTest extends TestCase
 
         app(JoesFulfillmentService::class)->claim(self::PUBLIC_ID_42, 42, Carbon::createFromTimestampUTC($submittedAt));
 
-        Http::fake();
+        Http::fake([
+            'https://craftjd.test/api/joes/requests*' => Http::response(['data' => []]),
+        ]);
 
         $this->get('/joes/requests/'.self::PUBLIC_ID_42.'/claim?number=42&submitted_at='.$submittedAt.'&expires='.$expires.'&signature='.$signature)
             ->assertOk()
             ->assertSee('Request #42 is claimed');
 
-        Http::assertNothingSent();
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), self::PUBLIC_ID_42));
     }
 
     public function test_claim_link_shows_already_fulfilled_for_completed_request(): void

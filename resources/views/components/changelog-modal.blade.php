@@ -91,7 +91,7 @@
 
                     {{-- Summary --}}
                     <p class="mt-1 font-mono text-[0.8125rem] leading-relaxed text-stone-300">
-                        {{ $entry['fulfillment_summary'] ?? $entry['request'] }}
+                        {{ $entry['fulfillment_summary'] ?? $entry['request'] ?? '' }}
                     </p>
 
                     {{-- Timings --}}
